@@ -7,7 +7,7 @@ CODE FOR PROCESSING THE SRAG DATABASES FROM OPENDATASUS
     THE OPENDATASUS SOURCE AND PERFORMS PROCESSING TO ADJUST THE DATA SET 
     INTO SURVIVAL DATA FORMAT
     
-    (this script was created for the databases retrieved in 2021-07-07;
+    (this script was designed for the databases retrieved in 2021-07-07;
     any changes in the data structure after this data 
     may not be addressed in this pipeline)
     
@@ -61,6 +61,12 @@ FEAT_REPLACE = "_srag_clinicalFeatReplace.json"
 FEAT_REGEX = "_srag_featRegex.json"
 FEAT_UNIFICATION = "_srag_featUnification.json"
 
+
+class openDataSusSurvival(Repository):
+    
+    def __init__(self):
+        pass
+
 def _log():
     '''
     This function is executed inside option --save
@@ -79,30 +85,52 @@ def _log():
         #f.write('\n(description)')
     return
 
-def _save_dbs(no_save):
+def __save_log(func, file): # PUT INSIDE REPOSITORY CLASS?
+    '''
+    This function checks wheter the file (the absolute path) exists, 
+    and calls the functions to write in the provided file accordingly to 
+    the processing files being saved.
+
+    Parameters
+    ----------
+    func : function
+        Specific log function to be executed, accordingly to the files being saved
+    file : string
+        (Absolute) Path of the log.txt file to be saved
+
+    Returns
+    -------
+    None.
+
+    '''
+    
+    pass
+
+def _save_dbs(no_save): # PUT INSIDE openDataSusSurvival Class
     '''
     --save=[True, False], default=True >> wheter to save (override) the original dataset files in \\openDataSUS\\data
                                           save as "temp_" file
                                         >> if True, 
                                         >> 
     '''
-    if no_save:
+    if no_save: pass
         # remove "temp_" files in data folder
-    else:
+    else: pass
         # save a '_log_process.txt' with information on the saved datasets (include path of this script)
         # if process is successful, remove "temp_" to final name
     return
 
-def save(no_save):
-    '''
+# def save(no_save): ## SHOULD BE A PARAM OF A METHOD IN openDataSusSurvival 
+                     ## THE METHOD SHOULD CALL AN INTERNAL METHOD TO MANIPULATE SAVINGS AND LOG-SAVE FILES
+#     '''
     
-    '''
-    # save output files inside out-file
-    _log()
-    _save_dbs(no_save)
-    return
+#     '''
+#     # save output files inside out-file
+#     _log()
+#     _save_dbs(no_save)
+#     return
 
-def processing_pipeline():
+def processing_pipeline(no_save):
     '''
     Pipeline for processing SRAG database into survival data.
     '''
