@@ -1,6 +1,6 @@
->> "_dictionary.json" files generated in 2021-07-19 10:07:55
-.. path of execution: openDataSUS\data\__data_dictionary\generate_dictionaries.py
-.. input base file: openDataSUS\data\__data_dictionary\_srag_orig_dicionario.json
-.. generated file: openDataSUS\data\INFLUD-28-06-2021_dictionary.json
-.. generated file: openDataSUS\data\INFLUD21-28-06-2021_dictionary.json
+>> "_dictionary.json" files generated in 2021-08-11 16:08:11
+.. path of execution: D:/GitRepositories/openDataSUS/codes/_utils/repository_cls.py
+.. input base file: D:/GitRepositories/openDataSUS/data/__data_dictionary/_srag_orig_dicionario.json
+.. generated file: openDataSUS/data/INFLUD-28-06-2021_dictionary.json
+.. generated file: openDataSUS/data/INFLUD21-28-06-2021_dictionary.json
 (description) Dictionary of features for the data files with same names

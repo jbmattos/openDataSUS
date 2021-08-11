@@ -39,6 +39,7 @@ import pandas as pd
 import os
 
 from datetime import date, datetime
+from _utils.repository_cls import Repository
 
 DATESTAMP = date.today().strftime('%Y%m%d')
 
