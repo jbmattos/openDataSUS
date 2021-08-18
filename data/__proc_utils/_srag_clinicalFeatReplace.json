@@ -1,0 +1,126 @@
+{
+  "CS_GESTANT": {
+    "nan": NaN,
+    "nao": false,
+    "trim_3": true,
+    "ignorado": NaN,
+    "idade_ignorada": true,
+    "0": true,
+    "trim_2": true,
+    "trim_1": true,
+    "6": false,
+    "5": false,
+    "9": NaN,
+    "2": true,
+    "3": true,
+    "1": true,
+    "4": true,
+    "5.0": false,
+    "6.0": false,
+    "2.0": true,
+    "9.0": NaN,
+    "3.0": true,
+    "1.0": true,
+    "4.0": true
+  },
+  "FEBRE": {
+    "sim": true,
+    "nao": false,
+    "ignorado": NaN
+  },
+  "TOSSE": {
+    "sim": true,
+    "nao": false,
+    "ignorado": NaN
+  },
+  "GARGANTA": {
+    "sim": true,
+    "nao": false,
+    "ignorado": NaN
+  },
+  "DISPNEIA": {
+    "sim": true,
+    "nao": false,
+    "ignorado": NaN
+  },
+  "DESC_RESP": {
+    "sim": true,
+    "nao": false,
+    "ignorado": NaN
+  },
+  "SATURACAO": {
+    "sim": true,
+    "nao": false,
+    "ignorado": NaN
+  },
+  "DIARREIA": {
+    "sim": true,
+    "nao": false,
+    "ignorado": NaN
+  },
+  "VOMITO": {
+    "sim": true,
+    "nao": false,
+    "ignorado": NaN
+  },
+  "PUERPERA": {
+    "sim": true,
+    "nao": false,
+    "ignorado": NaN
+  },
+  "CARDIOPATI": {
+    "sim": true,
+    "nao": false,
+    "ignorado": NaN
+  },
+  "HEMATOLOGI": {
+    "sim": true,
+    "nao": false,
+    "ignorado": NaN
+  },
+  "SIND_DOWN": {
+    "sim": true,
+    "nao": false,
+    "ignorado": NaN
+  },
+  "HEPATICA": {
+    "sim": true,
+    "nao": false,
+    "ignorado": NaN
+  },
+  "ASMA": {
+    "sim": true,
+    "nao": false,
+    "ignorado": NaN
+  },
+  "DIABETES": {
+    "sim": true,
+    "nao": false,
+    "ignorado": NaN
+  },
+  "NEUROLOGIC": {
+    "sim": true,
+    "nao": false,
+    "ignorado": NaN
+  },
+  "PNEUMOPATI": {
+    "sim": true,
+    "nao": false,
+    "ignorado": NaN
+  },
+  "IMUNODEPRE": {
+    "sim": true,
+    "nao": false,
+    "ignorado": NaN
+  },
+  "RENAL": {
+    "sim": true,
+    "nao": false,
+    "ignorado": NaN
+  },
+  "OBESIDADE": {
+    "sim": true,
+    "nao": false,
+    "ignorado": NaN
+  }
+}

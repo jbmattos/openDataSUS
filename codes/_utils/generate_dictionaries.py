@@ -7,10 +7,11 @@ CODE FOR GENERATING DICTIONARY OF FEATURES
     (changes in the data structure after this data may not be addressed in this pipeline)
 
     EXECUTION: THE SCRIPT SHOULD RUN FROM ANYWERE INSIDE 'openDataSUS' FOLDER
-    INPUT FILE: openDataSUS\\data\\__code_generate_dictionary-json\\_srag_orig_dicionario.json
+    INPUT FILE: openDataSUS\\data\\__data_dictionary\\_srag_orig_dicionario.json
     
     ISSUES:
-        - datestamp from log do not update after first execution.
+        #1 datestamp from log do not update after first execution.
+        #2 add argparse option to save the json files (in case changes may be needed)
     
 """
 
