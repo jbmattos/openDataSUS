@@ -112,6 +112,7 @@ class SUSurv(Repository):
             DESCRIPTION.
 
         '''
+        print('.. loading {}'.format(self._db_file(db_ref)))
         
         # dictionary of types
         with open(self._db_dic(db_ref)) as f: 
@@ -140,7 +141,6 @@ class SUSurv(Repository):
         
         self.__db_datestamp = self._get_db_datestamp(db_ref)
         self.__log_proc[self.__db_in_proc]['survival_dt_end'] = self.__db_datestamp
-        print('.. loaded {}'.format(self._db_file(db_ref)))
         return df
     
     def __feat_selection(self, db):
