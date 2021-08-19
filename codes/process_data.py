@@ -35,6 +35,7 @@ ADJUSTMENT:
 import argparse
 import json
 import numpy as np
+import os
 import pandas as pd
 import warnings
 
@@ -56,7 +57,16 @@ class SUSurv(Repository):
         self.__db_datestamp = None
         
         # processing flags: create flags to register the executed steps of processing [featSelec, covidSelec, dateFormat, ...] (?)
-    
+        self.__log_proc = {'datastamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                           'code-path': str(os.path.dirname(__file__)).replace('\\','/') + '/' + str(os.path.basename(__file__)),
+                            '__feat_selection': False,
+                            '__covid_selection': False,
+                            '__date_process': False,
+                            '__processClinicalInfo': False,
+                            '__processSurvivalData': False,
+                           }
+        
+        
     def __set_df(self, db_ref, df):
         if db_ref=='srag20':
             self.__df20 = df.copy()
@@ -127,6 +137,7 @@ class SUSurv(Repository):
         input-file: 
             openDataSUS\data\_srag_colSelection.json
         '''
+        self.__log_proc['__feat_selection'] = True
         
         with open(self._column_selec, 'r') as f: 
             colSelec = json.load(f)
@@ -142,6 +153,7 @@ class SUSurv(Repository):
         (PCR_SARS2==True):                       RT-PCR for SARS-CoV-2 result
         (POS_AN_OUT=='nao' & POS_AN_FLU=='nao'): results of testing other respiratory disease (OUT) and influenza (FLU)
         '''
+        self.__log_proc['__covid_selection'] = True
         
         return db[(db.CLASSI_FIN=='covid19') | (db.PCR_SARS2==True) | ((db.POS_AN_OUT=='nao') & (db.POS_AN_FLU=='nao'))].copy()
     
@@ -160,6 +172,7 @@ class SUSurv(Repository):
         ADJUSTMENTS
             1. Insert parameter for additional date features 
         '''
+        self.__log_proc['__date_process'] = True
         
         df = db.copy()
         dtFeat = [item for item in df.columns if 'DT_' in item]     # date features
@@ -189,6 +202,8 @@ class SUSurv(Repository):
             - unifying the identified (regex) patterns with the openDataSUS original clinical features
             - unifying some strategic clinical features into single one 
         '''
+        self.__log_proc['__processClinicalInfo'] = True
+        
         # existent clinical features >> adjustments
         with open(self._clinical_feat, 'r') as f: 
             var = json.load(f)
@@ -232,6 +247,8 @@ class SUSurv(Repository):
 
     #FUNCTION: GENERATE SURVIVAL FEATURES
     def __processSurvivalData(self, _df, event='obitoUTI', cases='all'):
+        
+        self.__log_proc['__processSurvivalData'] = True
         
         #FUNCTION: GENERATE BEGIN/END SURVIVAL DATES
         def setSurvivalDates(_df, dt_end):
@@ -350,13 +367,8 @@ class SUSurv(Repository):
             if isinstance(self.__df21, pd.DataFrame):
                 self._save_proc_file(self.__df21, 'srag21')
             
-        # save log inside proc folder with processing log information and log from download (in case exists)
-        
-        self._close_repo(save_orig=save_srag)
-    
-        pass
-    
-    
+        self._close_repo(save_orig=save_srag, proc_log=self.__log_proc)
+        return
 
 
 ###################
@@ -374,9 +386,7 @@ def processing_pipeline(dbs, download, **kwargs):
     for db in dbs:
         if download: surv_proc.download(db)
         surv_proc.process_data(db, **kwargs)
-        # call processing pipeline of single db **kwargs{event, cases}
     
-    # call save option in SUSurv >> **kwargs{args.concat, args.nosave}
     surv_proc.save(**kwargs)
         
     return
@@ -408,7 +418,6 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     kwargs = vars(args)
-    print(kwargs)
     
     # PARAMS OF FUNCTION: processing_pipeline
     if args.db=='both':
@@ -416,18 +425,15 @@ if __name__ == '__main__':
     else:
         dbs = [args.db]
     del kwargs['db']
-    print(kwargs)
     
     if args.nocrawler:
         download = False
     else:
         download = True
     del kwargs['nocrawler']
-    print(kwargs)
     
     if args.nosave:
         kwargs['save_srag'] = False
     del kwargs['nosave']
-    print(kwargs)
     
     #processing_pipeline(dbs, download, **kwargs)

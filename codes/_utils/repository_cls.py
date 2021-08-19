@@ -50,10 +50,10 @@ class Repository():
         self.__db_file_mask = self.__data_path + "{}" + self.__extension             
         self.__db_tempfile_mask = self.__data_path + "temp_{}" + self.__extension
         self.__db_dic_mask = self.__data_path + "{}_dictionary.json"
-        self.__logfile_dbs = self.__data_path + "_log_opendatasus.json"
+        self.__logfile_download = self.__data_path + "_log_opendatasus.json"
+        self.__log_download = {}
         self.__use_temp = False
-        self.__compress = None 
-        self.__log_dbs = {}
+        self.__compress = None
         # paths: data/ __data_dictionary >> generation of dictionary of types
         self.__dataDic_path = self.__root_path + "data/__data_dictionary/"
         self.__logfile_dictionaries = self.__dataDic_path + '_log.txt'
@@ -71,6 +71,8 @@ class Repository():
         
         # path config: process_data_{}/
         self.__proc_file_mask = self.__proc_data_path + "{}_SUSurv" + self.__extension
+        self.__proc_dtype_mask = self.__proc_data_path + "{}_SUSurv_dtypes.json"
+        self.__logfile_proc = self.__proc_data_path + "_log.json"
         
         # initialise repository
         if check_dic: self.__check_data_dictionaries()
@@ -114,10 +116,10 @@ class Repository():
             raise ValueError('Directory not defined: {}'.format(_dir))
     
     def _get_db_datestamp(self, db_ref):
-        if db_ref in self.__log_dbs:
-            return self.__log_dbs[db_ref]['datestamp']
-        elif os.path.exists(self.__logfile_dbs):
-            with open(self.__logfile_dbs, 'r') as f:
+        if db_ref in self.__log_download:
+            return self.__log_download[db_ref]['datestamp']
+        elif os.path.exists(self.__logfile_download):
+            with open(self.__logfile_download, 'r') as f:
                 log = json.load(f)
             if db_ref in log:
                 return log[db_ref]['datestamp']
@@ -130,12 +132,30 @@ class Repository():
         self._verify_db(db_ref)
         return Repository.__DB_NAME[db_ref]
     
+    def __db_file_temp(self, db_ref):
+        return self.__db_tempfile_mask.format(Repository.__DB_NAME[db_ref])
+    
+    def __db_file_final(self, db_ref):
+        return self.__db_file_mask.format(Repository.__DB_NAME[db_ref])
+    
     def _db_file(self, db_ref):
         self._verify_db(db_ref)
         if not self.__use_temp:
             return self.__db_file_mask.format(Repository.__DB_NAME[db_ref])
         else:
             return self.__db_tempfile_mask.format(Repository.__DB_NAME[db_ref])
+    
+    def __proc_file(self, db_ref):
+        if db_ref=='concat':
+            return self.__proc_file_mask.format(Repository.__DB_NAME['srag20']+Repository.__DB_NAME['srag21'])
+        else:
+            return self.__proc_file_mask.format(Repository.__DB_NAME[db_ref])
+    
+    def __proc_file_dtypes(self, db_ref):
+        if db_ref=='concat':
+            return self.__proc_dtype_mask.format(Repository.__DB_NAME['srag20']+Repository.__DB_NAME['srag21'])
+        else:
+            return self.__proc_dtype_mask.format(Repository.__DB_NAME[db_ref])
     
     def _db_dic(self, db_ref):
         self._verify_db(db_ref)
@@ -248,7 +268,7 @@ class Repository():
         url, log = self.__get_data_url(db_ref)
         print(log)
         
-        self.__log_dbs[db_ref] = log
+        self.__log_download[db_ref] = log
         self.__use_temp = True
         file_name = self._db_file(db_ref)
         
@@ -278,24 +298,49 @@ class Repository():
         return
     
     def _save_proc_file(self, db, db_ref):
-        # get file name
-        # check compression
+        file_name = self.__proc_file(db_ref)
+        dtypes_file = self.__proc_file_dtypes(db_ref)
+        
+        # save dtypes json file
+        with open(dtypes_file, 'w') as f:
+            json.dump(db.dtypes.apply(lambda x: x.name).to_dict(),f)
+        
+        db.to_csv(file_name, index=False, compression=self.__compression, date_format='%Y-%m-%d') 
+        print('..saved: {}'.format(file_name))
         return
     
-    def _close_repo(self, save_orig):
-        # true: (if existed download >> check log) remove temp_files
-        # false: (if existed download >> check log) change temp_files to final names, save download log in /data/
-            
-            
-        # check if some log was added and add datestamp
-        #if self.__log_dbs:
-            #self.__log_dbs['datestamp'] = date.today().strftime('%Y%m%d')date.today().strftime('%Y%m%d')
+    def _close_repo(self, save_orig=True, proc_log=None):
         
-        # change temp name files to final name 
+        def rename_files(db_ref):
+            old = self.__db_file_temp(db_ref)
+            new = self.__db_file_final(db_ref)
+            os.rename(old, new)
+            return
         
-        # save log.json in /data/
+        def remove_files(db_ref):
+            file = self.__db_file_temp(db_ref)
+            os.remove(file)
+            return
         
+        if self.__log_download:
+            if save_orig:
+                # rename temp data files to final files
+                for db_ref in self.__log_download:
+                    rename_files(db_ref)
+                self.__use_temp = False
+                # save log from download
+                with open(self.__logfile_download, 'w') as f:
+                    json.dump(self.__log_download, f)
+            else:
+                # remove temp files
+                for db_ref in self.__log_download:
+                    remove_files(db_ref)
         
+        if proc_log:
+            # add download info to proc_log
+            proc_log['crawler'] = self.__log_download
+            with open(self.__logfile_proc, 'w') as f:
+                json.dump(proc_log, f)
         
         return
 
