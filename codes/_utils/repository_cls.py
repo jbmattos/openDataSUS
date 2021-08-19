@@ -159,7 +159,7 @@ class Repository():
     
     def _db_dic(self, db_ref):
         self._verify_db(db_ref)
-        return self.__db_dic_mask(Repository.__DB_NAME[db_ref])
+        return self.__db_dic_mask.format(Repository.__DB_NAME[db_ref])
         
     def _has_db(self, db_ref):
         return os.path.exists(self._db_file(db_ref))
