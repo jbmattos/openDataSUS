@@ -182,8 +182,8 @@ class Repository():
         '''
         
         def _log(dic20_path,dic21_path):
-            dic20_path = self._root + dic20_path.split(self._root)[1]
-            dic21_path = self._root + dic21_path.split(self._root)[1]
+            dic20_path = self.root + dic20_path.split(self.root)[1]
+            dic21_path = self.root + dic21_path.split(self.root)[1]
             
             with open(self.__logfile_dictionaries, 'w') as f:
                 f.write('>> "_dictionary.json" files generated in {}'.format(datetime.now().strftime("%Y-%m-%d %H:%m:%S")))
