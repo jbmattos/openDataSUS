@@ -56,17 +56,28 @@ class SUSurv(Repository):
         self.__dt_surv_begin = datetime.strptime('2019-12-01', '%Y-%m-%d') # date considered for the beggining of the Survival Study
         self.__db_datestamp = None
         
-        # processing flags: create flags to register the executed steps of processing [featSelec, covidSelec, dateFormat, ...] (?)
+        # processing infos
+        self.__db_in_proc = None
         self.__log_proc = {'datastamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                            'code-path': str(os.path.dirname(__file__)).replace('\\','/') + '/' + str(os.path.basename(__file__)),
-                            '__feat_selection': False,
-                            '__covid_selection': False,
-                            '__date_process': False,
-                            '__processClinicalInfo': False,
-                            '__processSurvivalData': False,
+                           'concat': None,
+                           'save_srag': None
                            }
+        self.__log_proc_db = {'event': None,
+                              'cases': None,
+                              '__feat_selection': False,
+                              '__covid_selection': False,
+                              '__date_process': False,
+                              '__processClinicalInfo': False,
+                              '__processSurvivalData': False,
+                             }
         
-        
+    def __set_log_db(self, db_ref, event, cases):
+        self.__log_proc[db_ref] = self.__log_proc_db.copy()
+        self.__log_proc[db_ref]['event'] = event
+        self.__log_proc[db_ref]['cases'] = cases
+        return
+    
     def __set_df(self, db_ref, df):
         if db_ref=='srag20':
             self.__df20 = df.copy()
@@ -137,7 +148,7 @@ class SUSurv(Repository):
         input-file: 
             openDataSUS\data\_srag_colSelection.json
         '''
-        self.__log_proc['__feat_selection'] = True
+        self.__log_proc[self.__db_in_proc]['__feat_selection'] = True
         
         with open(self._column_selec, 'r') as f: 
             colSelec = json.load(f)
@@ -153,7 +164,7 @@ class SUSurv(Repository):
         (PCR_SARS2==True):                       RT-PCR for SARS-CoV-2 result
         (POS_AN_OUT=='nao' & POS_AN_FLU=='nao'): results of testing other respiratory disease (OUT) and influenza (FLU)
         '''
-        self.__log_proc['__covid_selection'] = True
+        self.__log_proc[self.__db_in_proc]['__covid_selection'] = True
         
         return db[(db.CLASSI_FIN=='covid19') | (db.PCR_SARS2==True) | ((db.POS_AN_OUT=='nao') & (db.POS_AN_FLU=='nao'))].copy()
     
@@ -172,7 +183,7 @@ class SUSurv(Repository):
         ADJUSTMENTS
             1. Insert parameter for additional date features 
         '''
-        self.__log_proc['__date_process'] = True
+        self.__log_proc[self.__db_in_proc]['__date_process'] = True
         
         df = db.copy()
         dtFeat = [item for item in df.columns if 'DT_' in item]     # date features
@@ -202,7 +213,7 @@ class SUSurv(Repository):
             - unifying the identified (regex) patterns with the openDataSUS original clinical features
             - unifying some strategic clinical features into single one 
         '''
-        self.__log_proc['__processClinicalInfo'] = True
+        self.__log_proc[self.__db_in_proc]['__processClinicalInfo'] = True
         
         # existent clinical features >> adjustments
         with open(self._clinical_feat, 'r') as f: 
@@ -248,7 +259,7 @@ class SUSurv(Repository):
     #FUNCTION: GENERATE SURVIVAL FEATURES
     def __processSurvivalData(self, _df, event='obitoUTI', cases='all'):
         
-        self.__log_proc['__processSurvivalData'] = True
+        self.__log_proc[self.__db_in_proc]['__processSurvivalData'] = True
         
         #FUNCTION: GENERATE BEGIN/END SURVIVAL DATES
         def setSurvivalDates(_df, dt_end):
@@ -329,10 +340,12 @@ class SUSurv(Repository):
         '''
         
         self._verify_db(db_ref)
+        self.__set_log_db(db_ref, event, cases) # create log for db_ref
+        self.__db_in_proc = db_ref        
         
         if not self._has_db(db_ref):
             self.download(db_ref)
-        
+                
         # LOAD DATASET
         df = self.__load_db(db_ref)
         # FEAT SELECTION
@@ -347,9 +360,13 @@ class SUSurv(Repository):
         df = self.__processSurvivalData(df, event=event, cases=cases)
         
         self.__set_df(db_ref, df)
+        self.__db_in_proc = None
         return
     
     def save(self, concat=False, save_srag=True, **kwargs): # true or false?
+        
+        self.__log_proc['concat'] = concat
+        self.__log_proc['save_srag'] = save_srag
         
         if concat:
             if isinstance(self.__df20, pd.DataFrame) and isinstance(self.__df21, pd.Dataframe):
@@ -436,4 +453,4 @@ if __name__ == '__main__':
         kwargs['save_srag'] = False
     del kwargs['nosave']
     
-    #processing_pipeline(dbs, download, **kwargs)
+    processing_pipeline(dbs, download, **kwargs)

@@ -26,8 +26,8 @@ class Repository():
     
     # All defined dictionaries follow the _DB_REFS in the keys
     # --- Data file names
-    __DB_NAME = {'srag20': "INFLUD-28-06-2021",
-                'srag21': "INFLUD21-28-06-2021"}
+    __DB_NAME = {'srag20': "srag20", # "INFLUD-28-06-2021",
+                 'srag21': "srag21"} # "INFLUD21-28-06-2021"}
     # --- openDataSUS webpages
     __DB_URL = {'srag20': "https://opendatasus.saude.gov.br/dataset/bd-srag-2020",
                 'srag21': "https://opendatasus.saude.gov.br/dataset/bd-srag-2021"}
