@@ -263,10 +263,12 @@ class Repository():
         '''
         
         self._verify_db(db_ref)
-        print('\n>> Downloading {}\n.'.format(db_ref))
+        print('\n>> downloading {}\n.'.format(db_ref))
         
         url, log = self.__get_data_url(db_ref)
-        print(log)
+        print('.. generating file: {}'.format(log['file']))
+        print('.. url: {}'.format(log['url']))
+        print('.. data source: {}'.format(log['file-source']))
         
         self.__log_download[db_ref] = log
         self.__use_temp = True
@@ -305,7 +307,7 @@ class Repository():
         with open(dtypes_file, 'w') as f:
             json.dump(db.dtypes.apply(lambda x: x.name).to_dict(),f)
         
-        db.to_csv(file_name, index=False, compression=self.__compression, date_format='%Y-%m-%d') 
+        db.to_csv(file_name, index=False, compression=self.__compress, date_format='%Y-%m-%d') 
         print('..saved: {}'.format(file_name))
         return
     
@@ -315,11 +317,13 @@ class Repository():
             old = self.__db_file_temp(db_ref)
             new = self.__db_file_final(db_ref)
             os.rename(old, new)
+            print('\n>> renamed final original data files')
             return
         
         def remove_files(db_ref):
             file = self.__db_file_temp(db_ref)
             os.remove(file)
+            print('\n>> removed temp_ original data files')
             return
         
         if self.__log_download:

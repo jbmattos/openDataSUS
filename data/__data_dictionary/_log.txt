@@ -1,6 +1,6 @@
->> "_dictionary.json" files generated in 2021-08-19 11:08:36
+>> "_dictionary.json" files generated in 2021-08-19 11:08:12
 .. path of execution: D:/GitRepositories/openDataSUS/codes/_utils/repository_cls.py
 .. input base file: D:/GitRepositories/openDataSUS/data/__data_dictionary/_srag_orig_dicionario.json
-.. generated file: openDataSUS/data/INFLUD-28-06-2021_dictionary.json
-.. generated file: openDataSUS/data/INFLUD21-28-06-2021_dictionary.json
+.. generated file: openDataSUS/data/srag20_dictionary.json
+.. generated file: openDataSUS/data/srag21_dictionary.json
 (description) Dictionary of features for the data files with same names

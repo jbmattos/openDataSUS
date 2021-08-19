@@ -65,6 +65,7 @@ class SUSurv(Repository):
                            }
         self.__log_proc_db = {'event': None,
                               'cases': None,
+                              'survival_dt_end': None,
                               '__feat_selection': False,
                               '__covid_selection': False,
                               '__date_process': False,
@@ -86,7 +87,7 @@ class SUSurv(Repository):
         else:
             raise ValueError('The processed data set < {} > is not defined in SUSurv()'.format(db_ref))
         
-        print('>> done: {} processing'.format(db_ref))
+        print('> {} processing done'.format(db_ref))
         return
     
     def __set_concat(self):
@@ -138,6 +139,8 @@ class SUSurv(Repository):
         df.insert(0,'id_DB', [self._get_name(db_ref)]*df.shape[0])
         
         self.__db_datestamp = self._get_db_datestamp(db_ref)
+        self.__log_proc[self.__db_in_proc]['survival_dt_end'] = self.__db_datestamp
+        print('.. loaded {}'.format(self._db_file(db_ref)))
         return df
     
     def __feat_selection(self, db):
@@ -149,6 +152,7 @@ class SUSurv(Repository):
             openDataSUS\data\_srag_colSelection.json
         '''
         self.__log_proc[self.__db_in_proc]['__feat_selection'] = True
+        print('.. feature selection')
         
         with open(self._column_selec, 'r') as f: 
             colSelec = json.load(f)
@@ -165,6 +169,7 @@ class SUSurv(Repository):
         (POS_AN_OUT=='nao' & POS_AN_FLU=='nao'): results of testing other respiratory disease (OUT) and influenza (FLU)
         '''
         self.__log_proc[self.__db_in_proc]['__covid_selection'] = True
+        print('.. covid cases selection')
         
         return db[(db.CLASSI_FIN=='covid19') | (db.PCR_SARS2==True) | ((db.POS_AN_OUT=='nao') & (db.POS_AN_FLU=='nao'))].copy()
     
@@ -184,6 +189,7 @@ class SUSurv(Repository):
             1. Insert parameter for additional date features 
         '''
         self.__log_proc[self.__db_in_proc]['__date_process'] = True
+        print('.. date-type formatting')
         
         df = db.copy()
         dtFeat = [item for item in df.columns if 'DT_' in item]     # date features
@@ -214,6 +220,7 @@ class SUSurv(Repository):
             - unifying some strategic clinical features into single one 
         '''
         self.__log_proc[self.__db_in_proc]['__processClinicalInfo'] = True
+        print('.. clinical features extraction')
         
         # existent clinical features >> adjustments
         with open(self._clinical_feat, 'r') as f: 
@@ -260,6 +267,7 @@ class SUSurv(Repository):
     def __processSurvivalData(self, _df, event='obitoUTI', cases='all'):
         
         self.__log_proc[self.__db_in_proc]['__processSurvivalData'] = True
+        print('.. survival features generation')
         
         #FUNCTION: GENERATE BEGIN/END SURVIVAL DATES
         def setSurvivalDates(_df, dt_end):
@@ -338,6 +346,7 @@ class SUSurv(Repository):
         None.
 
         '''
+        print('\n>> started {} data processing pipeline\n.'.format(db_ref))
         
         self._verify_db(db_ref)
         self.__set_log_db(db_ref, event, cases) # create log for db_ref
@@ -365,6 +374,7 @@ class SUSurv(Repository):
     
     def save(self, concat=False, save_srag=True, **kwargs): # true or false?
         
+        print('\n>> started SUSurv saving process\n.')
         self.__log_proc['concat'] = concat
         self.__log_proc['save_srag'] = save_srag
         

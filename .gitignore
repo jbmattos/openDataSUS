@@ -6,5 +6,7 @@ __pycache__/
 venv/
 
 # DATA SETS (large files, greater than 100MB)
-*INFLUD-28-06-2021.csv
-*INFLUD21-28-06-2021.csv
+data/*.csv
+
+# PROCESSED DATA FOLDER
+process_data_*/
