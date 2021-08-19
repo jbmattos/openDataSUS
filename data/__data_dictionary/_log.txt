@@ -1,4 +1,4 @@
->> "_dictionary.json" files generated in 2021-08-19 11:08:12
+>> "_dictionary.json" files generated in 2021-08-19 16:08:57
 .. path of execution: D:/GitRepositories/openDataSUS/codes/_utils/repository_cls.py
 .. input base file: D:/GitRepositories/openDataSUS/data/__data_dictionary/_srag_orig_dicionario.json
 .. generated file: openDataSUS/data/srag20_dictionary.json

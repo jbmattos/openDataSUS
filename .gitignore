@@ -7,6 +7,7 @@ venv/
 
 # DATA SETS (large files, greater than 100MB)
 data/*.csv
+data/_log*
 
 # PROCESSED DATA FOLDER
 process_data_*/
