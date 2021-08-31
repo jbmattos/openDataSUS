@@ -11,3 +11,6 @@ data/_log*
 
 # PROCESSED DATA FOLDER
 process_data_*/
+
+# DOCS
+__docs/related_research/*.pdf
