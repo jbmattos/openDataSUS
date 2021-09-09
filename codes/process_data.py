@@ -47,17 +47,21 @@ class SUSurv(Repository):
     
     def __init__(self):
         super().__init__()
-        # dataframes
+        # DataFrames
         self.__dfs_proc = {}
         self.__df_concat = None
         self.__df_inproc = None
         
-        # processing 
+        # Data Processing 
+        self.surv_status_feat_ = 'survival_status'
+        self.surv_time_feat = 'survival_time'
         self.__dt_surv_begin = datetime.strptime('2019-12-01', '%Y-%m-%d') # date considered for the beggining of the Survival Study
         self.__db_datestamp = None
-        ## [modifief in] processing initialisation and closure
+        ## [modifief in] processing in open/close_db_processing methods
+        self.__open = False
         self.__db_ref_inproc = None
         self.__surv_event_def = None
+        self.__input_cens = None
         ## logs
         self.__log_proc = {'datastamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                            'code-path': str(os.path.dirname(__file__)).replace('\\','/') + '/' + str(os.path.basename(__file__)),
@@ -65,39 +69,68 @@ class SUSurv(Repository):
                            'save_srag': None
                            }
         self.__log_proc_db = {'event': None,
-                              'cases': None,
-                              'survival_dt_end': None,
+                              'db_datestamp': None,
                               'case_selection': False,
                               'feat_selection': False,
                               'generate_clinical_feat': False,
-                              'generate_survival_data': False,
+                              'survival_features': False,
                              }
+    
+    def open_db_processing(self, db_ref, event='obitoUTI', input_cens=True):
+        self._verify_db(db_ref)
+        # private class attributes definition
+        self.__db_ref_inproc = db_ref
+        self.__surv_event_def = event
+        self.__input_cens = input_cens
+        self.__set_log_db(db_ref, event) # create log for db_ref    
+        
+        if not self._has_db(db_ref):
+            self.download_opendatasus(db_ref)
+        
+        self.__df_inproc = self.load_original_data(db_ref)
+        self.__open = True
+        return
+    
+    def close_db_processing(self):
+        self.__save_processed_data()
+        self.__db_ref_inproc = None
+        self.__surv_event_def = None
+        self.__input_cens = None
+        self.__df_inproc = None
+        self.__open = False
+        return    
     
     @__db_ref_inproc.setter
     def __db_ref_inproc(self, value):
-        if isinstance(value, str) and isinstance(self.__db_ref_inproc, str):
-            if value != self.__db_ref_inproc:
-                processing_close(self)
-        else:
-            self.__db_ref_inproc = value
+        if self__open:
+            self.close_db_processing(self)
+        self.__db_ref_inproc = value
     
     @property
     def event_(self):
         return self.__surv_event_def
-        
+    
+    @property
+    def survival_status_(self):
+        if self.__open:
+            if not self.__log_proc[self.__db_ref_inproc]['survival_features']:
+                self.survival_features()
+            return self.__df_inproc[self.surv_status_feat_]
+        else:
+            return None
+                
     @property
     def inproc_data_(self):
         if self.__df_inproc is None:
             self.__df_inproc = self.load_original_data(db_ref)
         return self.__df_inproc
     
-    def __set_log_db(self, db_ref, event, cases):
+    def __set_log_db(self, db_ref, event):
         self.__log_proc[db_ref] = self.__log_proc_db.copy()
         self.__log_proc[db_ref]['event'] = event
-        self.__log_proc[db_ref]['cases'] = cases
         return
     
-    def __set_proc_data(self):
+    def __save_processed_data(self):
         self.__dfs_proc[self.__db_ref_inproc] = self.__df_inproc.copy()
         print('> {} processing done'.format(db_ref))
         return
@@ -105,6 +138,28 @@ class SUSurv(Repository):
     def __set_concat(self):
         self.__df_concat = pd.concat([df for df in self.__dfs_proc.values()], axis='index', ignore_index=True)
         return
+    
+    def __default_surv_status(self, df):
+        '''
+        Returns the default Survival Status definition for SRAG data set
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Srag data with at least default feature selection.
+
+        Returns
+        -------
+        pd.Series
+            Survival status for the data population.
+
+        '''
+        if self.event_=='obitoUTI':
+            return (df['UTI'] == 'sim') | (df['EVOLUCAO'] == 'obito')
+        elif self.event_=='obito':
+            return (df['EVOLUCAO'] == 'obito')
+        elif self.event_=='casosGraves':
+            return (df['HOSPITAL'] == 'sim') | (df['UTI'] == 'sim') | (df['EVOLUCAO'] == 'obito')
     
     def __load_db(self, db_ref):
         '''
@@ -152,7 +207,7 @@ class SUSurv(Repository):
         df.insert(0,'id_DB', [self._get_name(db_ref)]*df.shape[0])
         
         self.__db_datestamp = self._get_db_datestamp(db_ref)
-        self.__log_proc[self.__db_ref_inproc]['survival_dt_end'] = self.__db_datestamp
+        self.__log_proc[self.__db_ref_inproc]['db_datestamp'] = self.__db_datestamp
         return df
     
     def processing_status_(self):
@@ -346,16 +401,16 @@ class SUSurv(Repository):
     
     def survival_features(self):
         '''
-        DESCRIBE
+        Generate the Time and Status Survival features.
+        Pipeline:
+            - process date features to datetype 
+            - set the begin/end study dates
+            - set default survival status
+            - input censoring date to missing end-study dates (optional)
+            - set survival times dropping missing values
 
         Parameters
         ----------
-        _df : TYPE
-            DESCRIPTION.
-        event : TYPE, optional
-            DESCRIPTION. The default is 'obitoUTI'.
-        cases : TYPE, optional
-            DESCRIPTION. The default is 'all'.
 
         Returns
         -------
@@ -364,7 +419,7 @@ class SUSurv(Repository):
 
         '''
         
-        self.__log_proc[self.__db_ref_inproc]['generate_survival_data'] = True
+        self.__log_proc[self.__db_ref_inproc]['survival_features'] = True
         print('.. survival features generation')
         
         dt_end = datetime.strptime(self.__db_datestamp, '%Y-%m-%d')
@@ -373,31 +428,13 @@ class SUSurv(Repository):
         df = self.__set_study_dates(df, dt_end)
         
         # Feature <survival_status>
-        # !!! ADJUST TO USE A SURV_STATUS VARIABLE
-        df['survival_status'] = self.__get_survival_status()
-        
-        #### handling censoring >> CREATE PRIVATE METHOD #####
-        if self.event_=='obitoUTI':
-            dt_censor = df['DT_INTERNA'].where((df['DT_INTERNA'] >= df['DT_BEGIN']) & (df['DT_INTERNA'] <= dt_end))
-        elif self.event_=='obito':
-            dt_censor = df[['DT_INTERNA', 'DT_ENTUTI']].apply(lambda row: row[(row >= df['DT_BEGIN'].loc[row.name]) & (row <= dt_end)].min(), axis='columns')
-        
-        # handling <DT_END = NaT> for EVENT=True
-        if event=='obitoUTI' or event=='obito':
-            cond_evTrue = (df['DT_END'].isna()) & (dt_censor.notnull()) & (df['survival_status']==True) # condition for replacing DT_END
-            df['DT_END'].mask(cond_evTrue, dt_censor, inplace=True)                                     # change <DT_END=NaN & event=True & dt_censor> with dt_censor
-            df['survival_status'].mask(cond_evTrue, False, inplace=True)                                # status=False for <DT_END=NaN & event=True & dt_censor>
-    
-        # handling <DT_END = NaT> for EVENT=False
-        cond_evFalse = (df['DT_END'].isna()) & (df['survival_status']==False)
-        df['DT_END'].mask(cond_evFalse, dt_end, inplace=True)                                           # change <DT_END=NaN & event=False> with dt_end
-        df['survival_status'].mask(cond_evFalse, False, inplace=True)                                   # status=False for <DT_END=NaN & event=False>
-        ################################
-        
+        df[self.surv_status_feat_] = self.__default_surv_status(df)
+        if self.__input_cens:
+            df = self.__handle_censoring(df)
         
         # Feature <survival_time>
-        df['survival_time'] = (df.DT_END - df.DT_BEGIN).dt.days
-        df.dropna(axis='index', subset=['survival_time'], inplace=True)     # drop <survival_time=NaN> (cases: <DT_END=NaN & event=True & dt_censor=NaN> OR <DT_BEGIN=NaN>)
+        df[self.surv_time_feat] = (df.DT_END - df.DT_BEGIN).dt.days
+        df.dropna(axis='index', subset=[self.surv_time_feat], inplace=True)     # drop <survival_time=NaN> (cases: <DT_END=NaN & event=True & dt_censor=NaN> OR <DT_BEGIN=NaN>)
         
         self.__df_inproc = df
         return
@@ -468,38 +505,43 @@ class SUSurv(Repository):
         df['DT_BEGIN'] = df[['DT_NOTIFIC', 'DT_SIN_PRI']].apply(lambda row: row[(row >= self.__dt_surv_begin) & (row <= dt_end)].min(), axis='columns')
         df['DT_END'] = df[colsEnd].apply(lambda row: row[(row >= df['DT_BEGIN'].loc[row.name]) & (row <= dt_end)].min(), axis='columns')
         return df
-    
-    def __get_survival_status(self):
-        # Feature <survival_status>
-        if self.event_=='obitoUTI':
-            return (df['UTI'] == 'sim') | (df['EVOLUCAO'] == 'obito')
-        elif self.event_=='obito':
-            return (df['EVOLUCAO'] == 'obito')
-        elif self.event_=='casosGraves':
-            return (df['HOSPITAL'] == 'sim') | (df['UTI'] == 'sim') | (df['EVOLUCAO'] == 'obito')
+
+    def __handle_censoring(self, df):
+        '''
         
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Data.
+
+        Returns
+        -------
+        pd.DataFrame
+
+        '''
+        
+        df = df.copy()
+        # date of censoring
+        if self.event_=='obitoUTI':
+            dt_censor = df['DT_INTERNA'].where((df['DT_INTERNA'] >= df['DT_BEGIN']) & (df['DT_INTERNA'] <= dt_end))
+        elif self.event_=='obito':
+            dt_censor = df[['DT_INTERNA', 'DT_ENTUTI']].apply(lambda row: row[(row >= df['DT_BEGIN'].loc[row.name]) & (row <= dt_end)].min(), axis='columns')
+        else:
+            dt_censor = pd.Series([np.nan]*df.shape[0])
+            
+        # handling <DT_END = NaT> for EVENT=True
+        cond_evTrue = (df['DT_END'].isna()) & (dt_censor.notnull()) & (df[self.surv_status_feat_]==True)    # condition for replacing NaN DT_END
+        df['DT_END'].mask(cond_evTrue, dt_censor, inplace=True)                                             # change <DT_END=NaN & event=True & dt_censor> with dt_censor
+        df[self.surv_status_feat] = df[self.surv_status_feat].mask(cond_evTrue, False, inplace=True)        # status=False for replaced <DT_END=NaN & event=True & dt_censor>
+
+        # handling <DT_END = NaT> for EVENT=False
+        cond_evFalse = (df['DT_END'].isna()) & (df[self.surv_status_feat]==False)
+        df['DT_END'].mask(cond_evFalse, dt_end, inplace=True)                                           # change <DT_END=NaN & event=False> with dt_end
+        return df
 
     def download_opendatasus(self, db_ref):
         self._download_opendatasus(db_ref)
-        return
-    
-    def processing_init(self, db_ref, event='obitoUTI'):
-        self._verify_db(db_ref)
-        # private class attributes definition
-        self.__db_ref_inproc = db_ref
-        self.__surv_event_def = event
-        self.__set_log_db(db_ref, event, cases) # create log for db_ref    
-        
-        if not self._has_db(db_ref):
-            self.download_opendatasus(db_ref)
-        self.__df_inproc = self.load_original_data(db_ref)
-        return
-    
-    def processing_close(self):
-        self.__set_proc_data()
-        self.__db_ref_inproc = None
-        self.__surv_event_def = None
-        self.__df_inproc = None
         return
     
     def data_processing(self, db_ref, clin_feat_gen=True, demo_feat=True, lab_feat=False, ibge_data=False, **kwargs):
@@ -538,7 +580,7 @@ class SUSurv(Repository):
         
         print('\n>> started {} data processing pipeline\n.'.format(db_ref))
         
-        self.processing_init(db_ref, **kwargs)
+        self.open_db_processing(db_ref, **kwargs)
         
         # CASE SELECTION
         self.case_selection()
@@ -621,10 +663,6 @@ if __name__ == '__main__':
                         choices=["obito","obitoUTI","graves"],
                         default="obitoUTI", type=str,
                         help="The survival event")
-    parser.add_argument("--cases", 
-                        choices=["all","hosp","uti"],
-                        default="all", type=str, 
-                        help="The covid cases to compose the data")
     
     args = parser.parse_args()
     kwargs = vars(args)
