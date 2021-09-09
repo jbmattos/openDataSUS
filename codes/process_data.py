@@ -48,16 +48,17 @@ class SUSurv(Repository):
     def __init__(self):
         super().__init__()
         # dataframes
-        self.__df20 = None
-        self.__df21 = None
+        self.__dfs_proc = {}
         self.__df_concat = None
+        self.__df_inproc = None
         
         # processing 
         self.__dt_surv_begin = datetime.strptime('2019-12-01', '%Y-%m-%d') # date considered for the beggining of the Survival Study
         self.__db_datestamp = None
-        
-        # processing infos
-        self.__db_in_proc = None
+        ## [modifief in] processing initialisation and closure
+        self.__db_ref_inproc = None
+        self.__surv_event_def = None
+        ## logs
         self.__log_proc = {'datastamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                            'code-path': str(os.path.dirname(__file__)).replace('\\','/') + '/' + str(os.path.basename(__file__)),
                            'concat': None,
@@ -66,32 +67,43 @@ class SUSurv(Repository):
         self.__log_proc_db = {'event': None,
                               'cases': None,
                               'survival_dt_end': None,
-                              '__feat_selection': False,
-                              '__covid_selection': False,
-                              '__date_process': False,
-                              '__processClinicalInfo': False,
-                              '__processSurvivalData': False,
+                              'case_selection': False,
+                              'feat_selection': False,
+                              'generate_clinical_feat': False,
+                              'generate_survival_data': False,
                              }
+    
+    @__db_ref_inproc.setter
+    def __db_ref_inproc(self, value):
+        if isinstance(value, str) and isinstance(self.__db_ref_inproc, str):
+            if value != self.__db_ref_inproc:
+                processing_close(self)
+        else:
+            self.__db_ref_inproc = value
+    
+    @property
+    def event_(self):
+        return self.__surv_event_def
         
+    @property
+    def inproc_data_(self):
+        if self.__df_inproc is None:
+            self.__df_inproc = self.load_original_data(db_ref)
+        return self.__df_inproc
+    
     def __set_log_db(self, db_ref, event, cases):
         self.__log_proc[db_ref] = self.__log_proc_db.copy()
         self.__log_proc[db_ref]['event'] = event
         self.__log_proc[db_ref]['cases'] = cases
         return
     
-    def __set_df(self, db_ref, df):
-        if db_ref=='srag20':
-            self.__df20 = df.copy()
-        elif db_ref=='srag21':
-            self.__df21 = df.copy()
-        else:
-            raise ValueError('The processed data set < {} > is not defined in SUSurv()'.format(db_ref))
-        
+    def __set_proc_data(self):
+        self.__dfs_proc[self.__db_ref_inproc] = self.__df_inproc.copy()
         print('> {} processing done'.format(db_ref))
         return
     
     def __set_concat(self):
-        self.__df_concat = pd.concat([self.__df20, self.__df21], axis='index', ignore_index=True)
+        self.__df_concat = pd.concat([df for df in self.__dfs_proc.values()], axis='index', ignore_index=True)
         return
     
     def __load_db(self, db_ref):
@@ -108,8 +120,8 @@ class SUSurv(Repository):
 
         Returns
         -------
-        df : TYPE
-            DESCRIPTION.
+        df : pd.DataFrame
+            SRAG data.
 
         '''
         print('.. loading {}'.format(self._db_file(db_ref)))
@@ -140,38 +152,255 @@ class SUSurv(Repository):
         df.insert(0,'id_DB', [self._get_name(db_ref)]*df.shape[0])
         
         self.__db_datestamp = self._get_db_datestamp(db_ref)
-        self.__log_proc[self.__db_in_proc]['survival_dt_end'] = self.__db_datestamp
+        self.__log_proc[self.__db_ref_inproc]['survival_dt_end'] = self.__db_datestamp
         return df
     
-    def __feat_selection(self, db):
-        '''
-        This function performs a feature selection that uses 
-        external .json file containing the features to keep in the data set.
+    def processing_status_(self):
+        print(self.__log_proc)
         
-        input-file: 
-            openDataSUS\data\_srag_colSelection.json
+    def get_proc_status_(self):
+        return self.__log_proc
+    
+    def load_original_data(self, db_ref):
+        return self.__load_db(db_ref)
+    
+    def case_selection(self, covid_pos=True):
         '''
-        self.__log_proc[self.__db_in_proc]['__feat_selection'] = True
-        print('.. feature selection')
+        This function is responsible for filtering the data set transactions.
+
+        Parameters
+        ----------
+        covid_pos : TYPE, optional
+            Selects the transactions that are COVID positive. The selection is a disjunction of the following conditions:
+            (CLASSI_FIN=='covid19'):                 final diagnosis of the case
+            (PCR_SARS2==True):                       RT-PCR for SARS-CoV-2 result
+            (POS_AN_OUT=='nao' & POS_AN_FLU=='nao'): results of testing other respiratory disease (OUT) and influenza (FLU)
+            
+            The default is True.
+
+        Returns
+        -------
+        None.
+        (Modifies the private attribute of the dataframe under processing)
+
+        '''
         
-        with open(self._column_selec, 'r') as f: 
-            colSelec = json.load(f)
-        cols2drop = list(set(db.columns) - set(colSelec))
-        return db.drop(columns=cols2drop)
+        self.__log_proc[self.__db_ref_inproc]['case_selection'] = {'covid_pos': covid_pos} # add here future input args in **kwargs format
+        print('.. case selection: {}'.format(self.__log_proc[self.__db_ref_inproc]['case_selection']))
+        
+        db = self.inproc_data_
+        
+        if covid_pos:
+            db = self.__covid_selection(db)
+        # add here future input args selection
+        
+        self.__df_inproc = db
+        return
     
     def __covid_selection(self, db):
         '''
         This function selects the transactions that are COVID positive. 
         The selection is a disjunction of the following conditions:
-        
         (CLASSI_FIN=='covid19'):                 final diagnosis of the case
         (PCR_SARS2==True):                       RT-PCR for SARS-CoV-2 result
         (POS_AN_OUT=='nao' & POS_AN_FLU=='nao'): results of testing other respiratory disease (OUT) and influenza (FLU)
+        '''        
+        return db[(db.CLASSI_FIN=='covid19') | (db.AN_SARS2==True) | (db.PCR_SARS2==True) | (db.RES_IGM == SIM ) | (db.RES_IGA == SIM )].copy()
+    
+    def feat_selection(self, clin_feat_gen=False, demo_feat=False, lab_feat=False):
         '''
-        self.__log_proc[self.__db_in_proc]['__covid_selection'] = True
-        print('.. covid cases selection')
+        This function is responsible for feature selection. By default, the data includes 
+        general info, date features and the SRAG original clinical features.
+        The selected features are predefined in the external .json files:
         
-        return db[(db.CLASSI_FIN=='covid19') | (db.PCR_SARS2==True) | ((db.POS_AN_OUT=='nao') & (db.POS_AN_FLU=='nao'))].copy()
+            openDataSUS\data\_srag_featSelection_genFeat.json  (general info feats)
+            openDataSUS\data\_srag_featSelection_dtFeat.json   (date feats)
+            openDataSUS\data\_srag_featSelection_clinFeat.json (clinical feats)
+        
+        Parameters
+        ----------
+        clin_feat_gen : bool, optional
+            Whether to generate clinical features by processing text features using predefined regex patterns.
+            If True, executes SUSurv.generate_clinical_feat()
+            The default is False.
+        demo_feat : bool, optional
+            Whether to include demographic features from SRAG data set
+            The default is False.
+        lab_feat : bool, optional (NOT IMPLEMENTED YET)
+            Whether to include laboratorial features from SRAG data set
+            containing test results for other viral coinfections
+            The default is False.
+            
+        Returns
+        -------
+        None.
+        (Modifies the private attribute of the dataframe under processing)
+
+        '''
+        
+        self.__log_proc[self.__db_ref_inproc]['feat_selection'] = {'clin_feat_gen': clin_feat_gen, 
+                                                                   'demo_feat': demo_feat, 
+                                                                   'lab_feat': lab_feat}
+        print('.. feature selection: {}'.format(self.__log_proc[self.__db_ref_inproc]['feat_selection']))
+        
+        # default info
+        default_feat = ["id_DB"]
+        with open(self._file_gen_feat, 'r') as f: 
+            default_feat += json.load(f)
+        with open(self._file_dt_feat, 'r') as f: 
+            default_feat += json.load(f)
+        with open(self._file_clin_feat, 'r') as f: 
+            default_feat += json.load(f)
+        
+        if demo_feat:
+            with open(self._file_demo_feat, 'r') as f: 
+                default_feat += json.load(f)
+        if lab_feat:
+            with open(self._file_lab_feat, 'r') as f: 
+                default_feat += json.load(f)        
+        
+        df = self.inproc_data_
+        df = df[default_feat]
+        
+        # generate new clinical features from text search and feature unification
+        if clin_feat_gen:
+            df = self.generate_clinical_feat(df)
+        
+        self.__df_inproc = df
+        return
+    
+    def generate_clinical_feat(self, df, combine=True):
+        '''
+        This function generates the boolean clinical features by:
+            - processing the < 'OUTRO_DES','MORB_DESC' > text features using preseted regex patterns 
+            - unifying the identified (regex) patterns with the openDataSUS original clinical features
+            - unifying some strategic clinical features into single one 
+        
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Dataframe containing the original clinical features to be processed into new ones.
+        combine : bool, optional
+            Wheter to combine some (pre-defined) strategic clinical features into single one. 
+            The default is True.
+
+        Returns
+        -------
+        pd.DataFrame
+            Data containing the final generated clinical features.
+
+        '''
+        
+        self.__log_proc[self.__db_ref_inproc]['generate_clinical_feat'] = {'combine': True}
+        print('.. clinical features generation from text processing ({})'.format(self.__log_proc[self.__db_ref_inproc]['generate_clinical_feat']))
+        
+        # existent clinical features >> adjustments
+        with open(self._file_clin_feat, 'r') as f: 
+            clin_feat = json.load(f)
+        with open(self._file_feat_clin2bool, 'r') as f: 
+            dic_replace = json.load(f)
+        with open(self._file_feat_regex, mode='rt') as f:
+            feat_regex = json.load(f)
+        with open(self._file_feat_unification, mode='rt') as f:
+            feat_unif = json.load(f)
+        
+        df = df.copy()
+        
+        # values adjustments
+        df.CS_GESTANT = df.CS_GESTANT.astype(str)
+        df.replace(dic_replace, inplace=True)
+        
+        # new clinical features >> text search
+        text_feat = ['OUTRO_DES','MORB_DESC']
+        textSearch = df[text_feat].fillna('').agg(' '.join, axis=1).replace(r'^\s*$', np.nan, regex=True)
+        textSearch = textSearch.str.lower()
+        df.drop(columns=text_feat, inplace=True)
+        
+        # add newly generated feats from regex search
+        for feature in feat_regex.keys(): 
+            df[feature] = textSearch.str.contains(feat_regex[feature], case=False, regex=True)
+        # unifying generated features with existent srag features
+        for feat_srag, feat in feat_unif:
+            df[feat] = df[[feat,feat_srag]].fillna('').astype(str).agg(''.join, axis=1).replace(r'^\s*$', np.nan, regex=True).str.contains('True', case=False)
+        # add original features for which no regex was implemented
+        df['doenca_hematologica'] = df['HEMATOLOGI']
+        df['sindrome_down'] = df['SIND_DOWN']
+        df.drop(columns=clin_feat, inplace=True)
+        
+        # set clinical features to boolean dtype
+        df = df.astype(dict.fromkeys([feat for feat in df.columns if feat.islower()],'boolean'))   
+        
+        # generate combined clinical features
+        if combine:
+            df['alteracao_olfato_paladar'] = (df['alteracao_olfato']==True) | (df['alteracao_paladar']==True)
+            df['alteracao_respiratoria'] = (df['disturbios_respiratorios']==True) | (df['cianose']==True) | (df['saturacao_menor_95']==True)
+            df['sintoma_gripal'] = (df['congestao_nasal']==True) | (df['coriza']==True) | (df['espirro']==True) | (df['cefaleia']==True) | (df['dor_de_garganta']==True) | (df['dores_corpo']==True) | (df['adinamia']==True) | (df['mal_estar']==True) | (df['dor_olhos']==True)
+            df['nausea_vomito'] = (df['nausea']==True) | (df['vomito']==True)
+        
+        upper_cases = {col: col.upper() for col in df.columns}
+        df.rename(columns=upper_cases, inplace=True)
+        return df
+    
+    def add_ibge_info(self):
+        pass
+    
+    def survival_features(self):
+        '''
+        DESCRIBE
+
+        Parameters
+        ----------
+        _df : TYPE
+            DESCRIPTION.
+        event : TYPE, optional
+            DESCRIPTION. The default is 'obitoUTI'.
+        cases : TYPE, optional
+            DESCRIPTION. The default is 'all'.
+
+        Returns
+        -------
+        None.
+        (Modifies the private attribute of the dataframe under processing)
+
+        '''
+        
+        self.__log_proc[self.__db_ref_inproc]['generate_survival_data'] = True
+        print('.. survival features generation')
+        
+        dt_end = datetime.strptime(self.__db_datestamp, '%Y-%m-%d')
+        df = self.inproc_data_
+        df = self.__date_process(df) # transform dt_features into date type
+        df = self.__set_study_dates(df, dt_end)
+        
+        # Feature <survival_status>
+        # !!! ADJUST TO USE A SURV_STATUS VARIABLE
+        df['survival_status'] = self.__get_survival_status()
+        
+        #### handling censoring >> CREATE PRIVATE METHOD #####
+        if self.event_=='obitoUTI':
+            dt_censor = df['DT_INTERNA'].where((df['DT_INTERNA'] >= df['DT_BEGIN']) & (df['DT_INTERNA'] <= dt_end))
+        elif self.event_=='obito':
+            dt_censor = df[['DT_INTERNA', 'DT_ENTUTI']].apply(lambda row: row[(row >= df['DT_BEGIN'].loc[row.name]) & (row <= dt_end)].min(), axis='columns')
+        
+        # handling <DT_END = NaT> for EVENT=True
+        if event=='obitoUTI' or event=='obito':
+            cond_evTrue = (df['DT_END'].isna()) & (dt_censor.notnull()) & (df['survival_status']==True) # condition for replacing DT_END
+            df['DT_END'].mask(cond_evTrue, dt_censor, inplace=True)                                     # change <DT_END=NaN & event=True & dt_censor> with dt_censor
+            df['survival_status'].mask(cond_evTrue, False, inplace=True)                                # status=False for <DT_END=NaN & event=True & dt_censor>
+    
+        # handling <DT_END = NaT> for EVENT=False
+        cond_evFalse = (df['DT_END'].isna()) & (df['survival_status']==False)
+        df['DT_END'].mask(cond_evFalse, dt_end, inplace=True)                                           # change <DT_END=NaN & event=False> with dt_end
+        df['survival_status'].mask(cond_evFalse, False, inplace=True)                                   # status=False for <DT_END=NaN & event=False>
+        ################################
+        
+        
+        # Feature <survival_time>
+        df['survival_time'] = (df.DT_END - df.DT_BEGIN).dt.days
+        df.dropna(axis='index', subset=['survival_time'], inplace=True)     # drop <survival_time=NaN> (cases: <DT_END=NaN & event=True & dt_censor=NaN> OR <DT_BEGIN=NaN>)
+        
+        self.__df_inproc = df
+        return
     
     def __date_process(self, db):
         '''
@@ -188,11 +417,11 @@ class SUSurv(Repository):
         ADJUSTMENTS
             1. Insert parameter for additional date features 
         '''
-        self.__log_proc[self.__db_in_proc]['__date_process'] = True
         print('.. date-type formatting')
         
         df = db.copy()
-        dtFeat = [item for item in df.columns if 'DT_' in item]     # date features
+        with open(self._file_dt_feat, 'r') as f: 
+            dtFeat = json.load(f)
         dtRegex = {r'^0*$':np.nan,                                # 1) dates with only 0 >> NaN
                    r'^(\d\d)\/(\d\d)\/(\d\d\d\d)': r'\3-\2-\1',   # 2) format dd/mm/yyyy >> Y-m-d
                    r'^(\d)\/(\d)\/(\d\d\d\d)': r'\3-0\2-0\1',     # 3) format d/m/yyyy >> Y-m-d
@@ -205,175 +434,129 @@ class SUSurv(Repository):
         for col in dtFeat:
             # year mask
             yearMask = df[col].fillna('').astype(str).apply(lambda value: 
-                                                            value.split('-')[0]).replace(r'^\s*$', np.nan, regex=True).astype(float)
             # (year > this_year) >> NaN
             df[col].mask(yearMask > this_year, np.nan, inplace=True) 
             # type: datetime
             df[col] = pd.to_datetime(df[col], errors='coerce') # columns to datetime: dates yielding overflow are set to NaN ['coerce'] 
         return df
-
-    def __processClinicalInfo(self, df, combine=True):
+    
+    def __set_study_dates(self, df, dt_end):
         '''
-        This function generates the boolean clinical features by:
-            - processing the < 'OUTRO_DES','MORB_DESC' > text features using preseted regex patterns 
-            - unifying the identified (regex) patterns with the openDataSUS original clinical features
-            - unifying some strategic clinical features into single one 
-        '''
-        self.__log_proc[self.__db_in_proc]['__processClinicalInfo'] = True
-        print('.. clinical features extraction')
-        
-        # existent clinical features >> adjustments
-        with open(self._clinical_feat, 'r') as f: 
-            var = json.load(f)
-        with open(self._feat_replace, 'r') as f: 
-            dic_replace = json.load(f)
-        
-        dfClinical = df[var].copy()
-        dfClinical.CS_GESTANT = dfClinical.CS_GESTANT.astype(str)
-        dfClinical.replace(dic_replace, inplace=True)
-        
-        # new clinical features >> text search
-        textSearch = df[['OUTRO_DES','MORB_DESC']].fillna('').agg(' '.join, axis=1).replace(r'^\s*$', np.nan, regex=True)
-        textSearch = textSearch.str.lower()
-        with open(self._feat_regex, mode='rt') as f:
-            feature_regex = json.load(f)
-        for feature in feature_regex.keys():
-            dfClinical[feature] = textSearch.str.contains(feature_regex[feature], case=False, regex=True)
-        
-        # unifying generated features with existent srag features
-        with open(self._feat_unification, mode='rt') as f:
-            unif = json.load(f)
-        for feat_srag, feat in unif:
-            dfClinical[feat] = dfClinical[[feat,feat_srag]].fillna('').astype(str).agg(''.join, axis=1).replace(r'^\s*$', np.nan, regex=True).str.contains('True', case=False)
-        
-        # processed clinical database >> with relevant original information
-        clinicalFeat = list(feature_regex.keys()) + ['HEMATOLOGI','SIND_DOWN']
-        dfFeat = ['id_DB','DT_NOTIFIC','DT_SIN_PRI','HOSPITAL','DT_INTERNA','UTI','DT_ENTUTI','EVOLUCAO','DT_EVOLUCA','DT_ENCERRA']
-        
-        dfProcess = pd.concat([df[dfFeat],dfClinical[clinicalFeat]], axis='columns')
-        dfProcess.rename(columns={'HEMATOLOGI':'doenca_hematologica','SIND_DOWN':'sindrome_down'}, inplace=True)
-        dfProcess = dfProcess.astype(dict.fromkeys([feat for feat in dfProcess.columns if feat.islower()],'boolean'))   # set clinical features to boolean dtype
-        
-        if combine:
-            # generate combined clinical features
-            dfProcess['alteracao_olfato_paladar'] = (dfProcess['alteracao_olfato']==True) | (dfProcess['alteracao_paladar']==True)
-            dfProcess['alteracao_respiratoria'] = (dfProcess['disturbios_respiratorios']==True) | (dfProcess['cianose']==True) | (dfProcess['saturacao_menor_95']==True)
-            dfProcess['sintoma_gripal'] = (dfProcess['congestao_nasal']==True) | (dfProcess['coriza']==True) | (dfProcess['espirro']==True) | (dfProcess['cefaleia']==True) | (dfProcess['dor_de_garganta']==True) | (dfProcess['dores_corpo']==True) | (dfProcess['adinamia']==True) | (dfProcess['mal_estar']==True) | (dfProcess['dor_olhos']==True)
-            dfProcess['nausea_vomito'] = (dfProcess['nausea']==True) | (dfProcess['vomito']==True)
-        
-        return dfProcess    
+        This function generates the beggining and final survival study dates.
 
-    #FUNCTION: GENERATE SURVIVAL FEATURES
-    def __processSurvivalData(self, _df, event='obitoUTI', cases='all'):
-        
-        self.__log_proc[self.__db_in_proc]['__processSurvivalData'] = True
-        print('.. survival features generation')
-        
-        #FUNCTION: GENERATE BEGIN/END SURVIVAL DATES
-        def setSurvivalDates(_df, dt_end):
-            df = _df.copy()
-            # event definition
-            if event=='obitoUTI':
-                colsEnd = ['DT_ENTUTI', 'DT_EVOLUCA', 'DT_ENCERRA']
-            elif event=='casosGraves':
-                colsEnd = ['DT_INTERNA', 'DT_ENTUTI', 'DT_EVOLUCA', 'DT_ENCERRA']
-            elif event=='obito':
-                colsEnd = ['DT_EVOLUCA', 'DT_ENCERRA']
-    
-            # Features <DT_BEGIN, DT_END>: survival date ref for begin/end of study
-            df['DT_BEGIN'] = df[['DT_NOTIFIC', 'DT_SIN_PRI']].apply(lambda row: row[(row >= self.__dt_surv_begin) & (row <= dt_end)].min(), axis='columns')
-            df['DT_END'] = df[colsEnd].apply(lambda row: row[(row >= df['DT_BEGIN'].loc[row.name]) & (row <= dt_end)].min(), axis='columns')
-            return df
-        
-        dt_end = datetime.strptime(self.__db_datestamp, '%Y-%m-%d')
-        df = setSurvivalDates(_df, dt_end)
-    
-        # cases selection
-        if cases == 'all':
-            df = df.copy()
-        elif cases == 'hospital':
-            df = df[df.HOSPITAL == 'sim'].copy()
-    
-        # Feature <survival_status>
-        if event=='obitoUTI':
-            df['survival_status'] = (df['UTI'] == 'sim') | (df['EVOLUCAO'] == 'obito')
-            dt_censor = df['DT_INTERNA'].where((df['DT_INTERNA'] >= df['DT_BEGIN']) & (df['DT_INTERNA'] <= dt_end))
-        elif event=='obito':
-            df['survival_status'] = (df['EVOLUCAO'] == 'obito')
-            dt_censor = df[['DT_INTERNA', 'DT_ENTUTI']].apply(lambda row: row[(row >= df['DT_BEGIN'].loc[row.name]) & (row <= dt_end)].min(), axis='columns')
-        elif event=='casosGraves':
-            df['survival_status'] = (df['HOSPITAL'] == 'sim') | (df['UTI'] == 'sim') | (df['EVOLUCAO'] == 'obito')
-        
-        # handling <DT_END = NaT> for EVENT=True
-        if event=='obitoUTI' or event=='obito':
-            cond_evTrue = (df['DT_END'].isna()) & (dt_censor.notnull()) & (df['survival_status']==True) # condition for replacing DT_END
-            df['DT_END'].mask(cond_evTrue, dt_censor, inplace=True)                                     # change <DT_END=NaN & event=True & dt_censor> with dt_censor
-            df['survival_status'].mask(cond_evTrue, False, inplace=True)                                # status=False for <DT_END=NaN & event=True & dt_censor>
-    
-        # handling <DT_END = NaT> for EVENT=False
-        cond_evFalse = (df['DT_END'].isna()) & (df['survival_status']==False)
-        df['DT_END'].mask(cond_evFalse, dt_end, inplace=True)                                           # change <DT_END=NaN & event=False> with dt_end
-        df['survival_status'].mask(cond_evFalse, False, inplace=True)                                   # status=False for <DT_END=NaN & event=False>
-        
-        # Feature <survival_time>
-        df['survival_time'] = (df.DT_END - df.DT_BEGIN).dt.days
-        df.dropna(axis='index', subset=['survival_time'], inplace=True)     # drop <survival_time=NaN> (cases: <DT_END=NaN & event=True & dt_censor=NaN> OR <DT_BEGIN=NaN>)
-        
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Processing dataframe.
+        dt_end : datetime
+            Final date to consider (data set datestamp) [format: '%Y-%m-%d']
+
+        Returns
+        -------
+        pd.DataFrame
+
+        '''
+        # event definition 
+        if self.event_=='casosGraves':
+            colsEnd = ['DT_INTERNA', 'DT_ENTUTI', 'DT_EVOLUCA', 'DT_ENCERRA', 'DT_DIGITA']
+        elif self.event_=='obitoUTI':
+            colsEnd = ['DT_ENTUTI', 'DT_EVOLUCA', 'DT_ENCERRA', 'DT_DIGITA']
+        elif self.event_=='obito':
+            colsEnd = ['DT_EVOLUCA', 'DT_ENCERRA', 'DT_DIGITA']
+
+        # Features <DT_BEGIN, DT_END>: survival date ref for begin/end of study
+        df['DT_BEGIN'] = df[['DT_NOTIFIC', 'DT_SIN_PRI']].apply(lambda row: row[(row >= self.__dt_surv_begin) & (row <= dt_end)].min(), axis='columns')
+        df['DT_END'] = df[colsEnd].apply(lambda row: row[(row >= df['DT_BEGIN'].loc[row.name]) & (row <= dt_end)].min(), axis='columns')
         return df
+    
+    def __get_survival_status(self):
+        # Feature <survival_status>
+        if self.event_=='obitoUTI':
+            return (df['UTI'] == 'sim') | (df['EVOLUCAO'] == 'obito')
+        elif self.event_=='obito':
+            return (df['EVOLUCAO'] == 'obito')
+        elif self.event_=='casosGraves':
+            return (df['HOSPITAL'] == 'sim') | (df['UTI'] == 'sim') | (df['EVOLUCAO'] == 'obito')
+        
 
-    def download(self, db_ref):
-        self._get_opendatasus(db_ref)
+    def download_opendatasus(self, db_ref):
+        self._download_opendatasus(db_ref)
         return
     
-    def process_data(self, db_ref, event='obitoUTI', cases='all', **kwargs):
+    def processing_init(self, db_ref, event='obitoUTI'):
+        self._verify_db(db_ref)
+        # private class attributes definition
+        self.__db_ref_inproc = db_ref
+        self.__surv_event_def = event
+        self.__set_log_db(db_ref, event, cases) # create log for db_ref    
+        
+        if not self._has_db(db_ref):
+            self.download_opendatasus(db_ref)
+        self.__df_inproc = self.load_original_data(db_ref)
+        return
+    
+    def processing_close(self):
+        self.__set_proc_data()
+        self.__db_ref_inproc = None
+        self.__surv_event_def = None
+        self.__df_inproc = None
+        return
+    
+    def data_processing(self, db_ref, clin_feat_gen=True, demo_feat=True, lab_feat=False, ibge_data=False, **kwargs):
         '''
-        DESCRIBE
+        
 
         Parameters
         ----------
         db_ref : string
             ['srag20', 'srag21']
-            Reference to the data set to be processed
-        **kwargs : 
-            Additional arguments for the processing procedure
+            Reference to the data set to be processed.
+        clin_feat_gen : bool, optional
+            Whether to generate clinical features by processing text features using predefined regex patterns.
+            If True, executes SUSurv.generate_clinical_feat()
+            The default is True.
+        demo_feat : bool, optional
+            Whether to include demographic features from SRAG data set
+            The default is True.
+        lab_feat : bool, optional (NOT IMPLEMENTED YET)
+            Whether to include laboratorial features from SRAG data set
+            containing test results for other viral coinfections
+            The default is False.
+        ibge_data : bool, optional (NOT IMPLEMENTED YET)
+            Add demographic information from IBGE database.
+            The default is False.
+        **kwargs : dictionary
+            Additional arguments for the processing procedure initialisation < proc_init() >
             - event: ["obito","obitoUTI","graves"]
                 Definition of the survival event.
-            - cases: ["all","hosp","uti"]
-                Data set cases to be considered.
 
         Returns
         -------
         None.
 
         '''
+        
         print('\n>> started {} data processing pipeline\n.'.format(db_ref))
         
-        self._verify_db(db_ref)
-        self.__set_log_db(db_ref, event, cases) # create log for db_ref
-        self.__db_in_proc = db_ref        
+        self.processing_init(db_ref, **kwargs)
         
-        if not self._has_db(db_ref):
-            self.download(db_ref)
-                
-        # LOAD DATASET
-        df = self.__load_db(db_ref)
+        # CASE SELECTION
+        self.case_selection()
+        
         # FEAT SELECTION
-        df = self.__feat_selection(df)
-        # COVID-CASES SELECTION
-        df = self.__covid_selection(df)
-        # DATE-TYPE PROCESSING
-        df = self.__date_process(df)
-        # CLINICAL INFO PROCESSING >> GENERATING SYMPTOMS/COMORBIDITIES FEATURES
-        df = self.__processClinicalInfo(df)
-        # SURVIVAL INFO
-        df = self.__processSurvivalData(df, event=event, cases=cases)
+        self.feat_selection(clin_feat_gen=clin_feat_gen, demo_feat=demo_feat, lab_feat=lab_feat)
+        if ibge_data:
+            self.add_ibge_info()
         
-        self.__set_df(db_ref, df)
-        self.__db_in_proc = None
+        # SURVIVAL DATA SET 
+        df = self.survival_features()
+        
         return
     
     def save(self, concat=False, save_srag=True, **kwargs): # true or false?
-        
+    '''
+    ADJUST FOR self.__dfs_proc = {db_ref : pandas.dataframe}
+    '''    
         print('\n>> started SUSurv saving process\n.')
         self.__log_proc['concat'] = concat
         self.__log_proc['save_srag'] = save_srag
@@ -411,8 +594,8 @@ def processing_pipeline(dbs, download, **kwargs):
     surv_proc = SUSurv()
     
     for db in dbs:
-        if download: surv_proc.download(db)
-        surv_proc.process_data(db, **kwargs)
+        if download: surv_proc.download_opendatasus(db)
+        surv_proc.data_processing(db, **kwargs)
     
     surv_proc.save(**kwargs)
         

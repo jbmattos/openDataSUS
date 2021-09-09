@@ -8,6 +8,11 @@
   "SATURACAO",
   "DIARREIA",
   "VOMITO",
+  "DOR_ABD",
+  "FADIGA",
+  "PERD_OLFT",
+  "PERD_PALA",
+  "OUTRO_DES",
   "PUERPERA",
   "CARDIOPATI",
   "HEMATOLOGI",
@@ -19,5 +24,7 @@
   "PNEUMOPATI",
   "IMUNODEPRE",
   "RENAL",
-  "OBESIDADE"
+  "OBESIDADE",
+  "OBES_IMC",
+  "MORB_DESC",
 ]

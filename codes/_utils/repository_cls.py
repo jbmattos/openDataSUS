@@ -63,11 +63,14 @@ class Repository():
         self.__procDic_add21 = self.__dataDic_path + "srag_2add_2021.json"
         # paths: data/ __proc_utils >> processing the openDataSUS files
         self.__procUtils_path = self.__root_path + "data/__proc_utils/"
-        self._column_selec = self.__procUtils_path + "_srag_colSelection.json"
-        self._clinical_feat = self.__procUtils_path + "_srag_clinicalFeat.json"
-        self._feat_replace = self.__procUtils_path + "_srag_clinicalFeatReplace.json"
-        self._feat_regex = self.__procUtils_path + "_srag_featRegex.json"
-        self._feat_unification = self.__procUtils_path + "_srag_featUnification.json"
+        self._file_gen_feat = self.__procUtils_path + "_srag_featSelection_genFeat.json"
+        self._file_clin_feat = self.__procUtils_path + "_srag_featSelection_clinFeat.json"
+        self._file_dt_feat = self.__procUtils_path + "_srag_featSelection_dtFeat.json"
+        self._file_demo_feat = self.__procUtils_path + "_srag_featSelection_demoFeat.json"
+        self._file_lab_feat = self.__procUtils_path + "_srag_featSelection_labFeat.json"
+        self._file_feat_clin2bool = self.__procUtils_path + "_srag_featProc_clinFeat2bool.json"
+        self._file_feat_regex = self.__procUtils_path + "_srag_featProc_featRegex.json"
+        self._file_feat_unification = self.__procUtils_path + "_srag_featProc_featUnification.json"
         
         # path config: process_data_{}/
         self.__proc_file_mask = self.__proc_data_path + "{}_SUSurv" + self.__extension
@@ -116,13 +119,16 @@ class Repository():
             raise ValueError('Directory not defined: {}'.format(_dir))
     
     def _get_db_datestamp(self, db_ref):
+        # retrieve info from Repository log_download
         if db_ref in self.__log_download:
             return self.__log_download[db_ref]['datestamp']
+        # retrieve info from Repository data/_log_opendatasus.json file
         elif os.path.exists(self.__logfile_download):
             with open(self.__logfile_download, 'r') as f:
                 log = json.load(f)
             if db_ref in log:
                 return log[db_ref]['datestamp']
+        # handles absence of data datestamp info
         else:
             stamp = date.today().strftime('%Y-%m-%d')
             warnings.warn('Data set download datestamp not provided: used {} instead'.format(stamp))
@@ -235,24 +241,8 @@ class Repository():
         _log(file20, file21)
         print('\n>> generated data dictionary files')
         return
-    
-    def __get_data_url(self, db_ref):
-        db_url = Repository.__DB_URL[db_ref]
-        r = requests.get(db_url)
-        soup = BeautifulSoup(r.text, features="lxml")
         
-        data_url = soup.find_all('li', class_='resource-item', attrs={'data-id':Repository.__DB_ID[db_ref]})[0].find(class_="resource-url-analytics")['href']
-        log = {'file': self._db_file(db_ref),
-               'url': db_url,
-               'head.title': soup.head.title.string,
-               'body.data-site-root': soup.body['data-site-root'],
-               'file-source': data_url,
-               'datestamp': date.today().strftime('%Y-%m-%d')
-              }
-        
-        return data_url, log
-    
-    def _get_opendatasus(self, db_ref):
+    def _download_opendatasus(self, db_ref):
         '''
         Downloads the data sets from the opendatasus
         (save downloaded data as temp)
@@ -262,10 +252,26 @@ class Repository():
 
         '''
         
+        def get_data_url(db_ref):
+            db_url = Repository.__DB_URL[db_ref]
+            r = requests.get(db_url)
+            soup = BeautifulSoup(r.text, features="lxml")
+            
+            data_url = soup.find_all('li', class_='resource-item', attrs={'data-id':Repository.__DB_ID[db_ref]})[0].find(class_="resource-url-analytics")['href']
+            log = {'file': self._db_file(db_ref),
+                   'url': db_url,
+                   'head.title': soup.head.title.string,
+                   'body.data-site-root': soup.body['data-site-root'],
+                   'file-source': data_url,
+                   'datestamp': date.today().strftime('%Y-%m-%d')
+                  }
+            return data_url, log
+        
+        
         self._verify_db(db_ref)
         print('\n>> downloading {}\n.'.format(db_ref))
         
-        url, log = self.__get_data_url(db_ref)
+        url, log = get_data_url(db_ref)
         print('.. generating file: {}'.format(log['file']))
         print('.. url: {}'.format(log['url']))
         print('.. data source: {}'.format(log['file-source']))

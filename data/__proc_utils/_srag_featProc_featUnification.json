@@ -74,5 +74,21 @@
   [
     "OBESIDADE",
     "obesidade"
+  ],
+  [
+    "DOR_ABD",
+    "dores_corpo"
+  ],
+  [
+    "FADIGA",
+    "adinamia"
+  ],
+  [
+    "PERD_OLFT",
+    "alteracao_olfato"
+  ],
+  [
+    "PERD_PALA",
+    "alteracao_paladar"
   ]
 ]
