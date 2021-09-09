@@ -439,7 +439,7 @@ class SUSurv(Repository):
         self.__df_inproc = df
         return
     
-    def __date_process(self, db):
+    def __date_process(self, df):
         '''
         This function process the Date Type features, where different data formats are mapped to %Y-%m-%d.
         The date features are selected from a prefix 'DT_'
@@ -456,7 +456,7 @@ class SUSurv(Repository):
         '''
         print('.. date-type formatting')
         
-        df = db.copy()
+        df = df.copy()
         with open(self._file_dt_feat, 'r') as f: 
             dtFeat = json.load(f)
         dtRegex = {r'^0*$':np.nan,                                # 1) dates with only 0 >> NaN
@@ -470,11 +470,13 @@ class SUSurv(Repository):
         this_year = date.today().year
         for col in dtFeat:
             # year mask
-            yearMask = df[col].fillna('').astype(str).apply(lambda value: 
+            yearMask = df[col].fillna('').astype(str).apply(lambda value:
+                                                            value.split('-')[0]).replace(r'^\s*$', np.nan, regex=True).astype(float)
             # (year > this_year) >> NaN
             df[col].mask(yearMask > this_year, np.nan, inplace=True) 
             # type: datetime
             df[col] = pd.to_datetime(df[col], errors='coerce') # columns to datetime: dates yielding overflow are set to NaN ['coerce'] 
+
         return df
     
     def __set_study_dates(self, df, dt_end):
