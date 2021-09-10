@@ -323,7 +323,7 @@ class Repository():
             old = self.__db_file_temp(db_ref)
             new = self.__db_file_final(db_ref)
             os.rename(old, new)
-            print('\n>> renamed final original data files')
+            print('\n>> saved final original data files')
             return
         
         def remove_files(db_ref):

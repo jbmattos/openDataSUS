@@ -76,19 +76,20 @@ class SUSurv(Repository):
         ## logs
         self.__generated_clin_feat = []
         self.__other_demo_feat = []
-        self.__log_proc = {'datastamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                           'code-path': str(os.path.dirname(__file__)).replace('\\','/') + '/' + str(os.path.basename(__file__)),
-                           'concat': None,
-                           'save_srag': None
-                           } 
+        self.__log_proc = {} 
         self.__log_proc_db = {'event_': None,
                               'input_cens_': None,
                               'db_datestamp_': None,
-                              'case_selection': False,
+                              'case_selection': [],
                               'feat_selection': False,
                               'generate_clinical_feat': False,
                               'add_ibge_feats': False
                              }
+        self.__log_gen = {'datastamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                          'code-path': str(os.path.dirname(__file__)).replace('\\','/') + '/' + str(os.path.basename(__file__)),
+                          'save_concat': None,
+                          'save_orig': None
+                          }
     
 
 
@@ -122,7 +123,7 @@ class SUSurv(Repository):
         self.__df_concat = pd.concat([df for df in self.__dfs_proc.values()], axis='index', ignore_index=True)
         return
 
-    def __open_db_processing(self, db_ref, event, input_cens):
+    def __open_db_processing(self, db_ref, event, input_cens, case_selection):
         # loads the parameters of open_db_processing plus the processing DataFrame and __open flag
         self.__set_log_db_processing(db_ref, event, input_cens)
         self.__db_ref_inproc = db_ref
@@ -134,11 +135,15 @@ class SUSurv(Repository):
         if not self._has_db(db_ref):
             self.download_opendatasus(db_ref)
         self.__df_inproc = self.get_original_data(db_ref)
-        self.__open = True
         
+        if case_selection:
+            self.case_selection()
+        # set DT features to date type
+        self.update_df_inproc(self.__date_process(self.inproc_data_))
         # generates survival data
         self.__set_survival_data()
-        
+        self.__open = True
+        return
         
     def __reset_db_processing(self):
         # resets the parameters of open_db_processing plus the processing DataFrame and __open flag
@@ -186,8 +191,9 @@ class SUSurv(Repository):
         (Modifies the private attribute of the dataframe under processing < __df_inproc >)
 
         '''
-        
         print('.. survival features generation')
+        
+        self.case_selection()
         
         df = self.inproc_data_
         df = self.__set_dt_study_feats(df)
@@ -241,7 +247,6 @@ class SUSurv(Repository):
         pd.DataFrame
     
         '''
-        
         # minimum date between self.__begin_study_feat given that it is between the threshold begin/end-dates
         df['DT_SURV_BEGIN'] = df[self.__begin_study_feat].apply(lambda row: row[(row >= self.__dt_begin_th) & (row <= self.__dt_end_th)].min(), axis='columns')
         # minimum date between self.__end_study_feat given that it is between the selected date for DT_SURV_BEGIN and the threshold end-date
@@ -274,8 +279,6 @@ class SUSurv(Repository):
         elif self.event_=='death':
             return (df['EVOLUCAO'] == 'obito')
     
-    
-    
     def __handle_censoring(self, df):
         '''
         Adjusts the survival status feature handling missing values for DT_SURV_END study date.
@@ -292,7 +295,6 @@ class SUSurv(Repository):
         pd.DataFrame
 
         '''
-        
         df = df.copy()
         if self.__input_cens:
             return self.__adjusted_input_censor(df)
@@ -324,7 +326,9 @@ class SUSurv(Repository):
     #  FEATURE SELECTION METHODS
     # 
     # OBS:
-    #
+    #   - The feature selection methods return a list
+    #   of the features' names to be selected in the 
+    #   required category
     #==================================================
     
     def __default_feats(self):
@@ -374,7 +378,6 @@ class SUSurv(Repository):
         return df[(df.CLASSI_FIN=='covid19') | (df.AN_SARS2==True) | (df.PCR_SARS2==True) | (df.RES_IGM==True) | (df.RES_IGA==True)].copy()
     
 
-        
     #==================================================
     #  DATAFRAME MANIPULATION
     # 
@@ -431,9 +434,6 @@ class SUSurv(Repository):
         self.__log_proc[self.__db_ref_inproc]['db_datestamp_'] = self.__db_datestamp
         return df
 
-    def __update_df_inproc(self, df):
-       self.__df_inproc = df.copy()
-    
     def __date_process(self, df):
         '''
         This function process the Date Type features, where different data formats are mapped to %Y-%m-%d.
@@ -486,19 +486,16 @@ class SUSurv(Repository):
 
         return df
     
-
-
-
+    def __update_df_inproc(self, df):
+       self.__df_inproc = df.copy()
+    
+    
 
     #######################################################################
     #######################################################################
     #                  PUBLIC ATTRIBUTES AND METHODS                      #
     #######################################################################
     #######################################################################
-    
-    @property
-    def proc_status_(self):
-        return self.__log_proc
     
     @property
     def survival_status_feat_(self):
@@ -520,12 +517,39 @@ class SUSurv(Repository):
     def event_(self):
         return self.__surv_event_def
     
+    def proc_status(self):
+        '''
+        Print the processing status
+
+        Returns
+        -------
+        None.
+
+        '''
+        print('\n=== DATA PROCESSING STATUS ===')
+        print('\n>> General Configs:')
+        print('proc datastamp: {}'.format(self.__log_gen['datastamp']))
+        print('proc code-path: {}'.format(self.__log_gen['code-path']))
+        print('proc saving concatenation: {}'.format(self.__log_gen['save_concat']))
+        print('proc saving original srag: {}'.format(self.__log_gen['save_orig']))
+        print('\n>> Processing Configs:')
+        for db in self.__log_proc.keys():
+            print('\n- Data set: {}'.format(db))
+            print('event: {}'.format(self.__log_proc[db]['event_']))
+            print('input censoring: {}'.format(self.__log_proc[db]['input_cens_']))
+            print('data set datestamp: {}'.format(self.__log_proc[db]['db_datestamp_']))
+            print('case selection: {}'.format(self.__log_proc[db]['case_selection']))
+            print('feature selection: {}'.format(self.__log_proc[db]['feat_selection']))
+            print('text-generated clinical features: {}'.format(self.__log_proc[db]['generate_clinical_feat']))
+            print('ibge data: {}'.format(self.__log_proc[db]['add_ibge_feats']))
+        return
+    
     def survival_status(self):
         # The survival status, with adjusted censoring
         if self.__open: return self.__df_inproc[self.surv_status_feat_]
         else: return None
     
-    def open_db_processing(self, db_ref, event='death', input_cens=True):
+    def open_db_processing(self, db_ref, event='death', input_cens=True, case_selection=True):
         '''
         Open the processing mode for a data set 
             
@@ -537,6 +561,10 @@ class SUSurv(Repository):
             DESCRIPTION. The default is 'death'.
         input_cens : TYPE, optional
             DESCRIPTION. The default is True.
+        case_selection: bool, optional
+            If True, performs the default case selection. The default is True.
+        feat_selection: bool, optional
+            If True, performs the default features selection. The default is False.
 
         Returns
         -------
@@ -551,7 +579,7 @@ class SUSurv(Repository):
         if db_ref in self.__db_ref_proc:
             self.__reopen_db_processing(db_ref)
         else:
-            self.__open_db_processing(db_ref, event, input_cens) # create log for db_ref  
+            self.__open_db_processing(db_ref, event, input_cens, case_selection)
     
     def close_db_processing(self):
         self.__save_processed_data()
@@ -559,8 +587,7 @@ class SUSurv(Repository):
         return    
     
     def get_original_data(self, db_ref):
-        df = self.__load_db(db_ref)
-        return self.__date_process(df)
+        return self.__load_db(db_ref)        
     
     def download_opendatasus(self):
         '''
@@ -591,40 +618,41 @@ class SUSurv(Repository):
     #   (modify the in-processing data)
     #==================================================
     
-    def case_selection(self, covid_pos=True):
+    def case_selection(self, method='covid_pos'):
         '''
         This function is responsible for filtering the data set transactions.
-
-        Parameters
-        ----------
-        covid_pos : TYPE, optional
-            Selects the transactions that are COVID positive. The selection is a disjunction of the following conditions:
+        Methods:
+            - "covid_pos": Selects the transactions that are COVID positive. 
+            The selection is a disjunction of the following conditions:
             (CLASSI_FIN=='covid19'):                 final diagnosis of the case
             (PCR_SARS2==True):                       RT-PCR for SARS-CoV-2 result
             (POS_AN_OUT=='nao' & POS_AN_FLU=='nao'): results of testing other respiratory disease (OUT) and influenza (FLU)
-            
-            The default is True.
-
+        
+        Parameters
+        ----------
+        method : str
+            The method of case selection. The default is covid_pos.
+        
         Returns
         -------
         None.
         (Modifies the private attribute of the dataframe under processing)
 
         '''
-        
-        if self.__log_proc[self.__db_ref_inproc]['case_selection']:
+        if method is self.__log_proc[self.__db_ref_inproc]['case_selection']:
             print('Case selection is updated')
             return
-        self.__log_proc[self.__db_ref_inproc]['case_selection'] = {'covid_pos': covid_pos} # add here future input args in **kwargs format
-        print('.. case selection: {}'.format(self.__log_proc[self.__db_ref_inproc]['case_selection']))
         
-        db = self.inproc_data_
+        self.__log_proc[self.__db_ref_inproc]['case_selection'].append(method) 
+        print('.. case selection: {}'.format(method))
         
-        if covid_pos:
-            db = self.__covid_positive_cases(db)
+        df = self.inproc_data_
+        
+        if method == 'covid_pos':
+            df = self.__covid_positive_cases(df)
         # add here future input args selection
         
-        self.__update_df_inproc(db)
+        self.__update_df_inproc(df)
         return
     
     def feat_selection(self, clin_feat_gen=False, demo_feat=False, lab_feat=False):
@@ -773,18 +801,15 @@ class SUSurv(Repository):
         # self.__update_df_inproc(df) # update with udpdated dataframe containing IBGE features
         return
     
-    def save(self, concat=False, save_srag=True, **kwargs): # true or false?
+    def save_full_process(self, concat=False, save_srag=True): # true or false?
         '''
-        This function generates the boolean clinical features by:
-            - processing the < 'OUTRO_DES','MORB_DESC' > text features using preseted regex patterns 
-            - unifying the identified (regex) patterns with the openDataSUS original clinical features
-            - unifying some strategic clinical features into single one 
+        This function saves all processed data open in SUSurv object.
         
         Parameters
         ----------
         concat : bool, optional
             Whether to concatenate all data sets processed and registered in the 
-            proc_status_. The default is False (saves separete files for each data set).
+            proc_status(). The default is False (saves separete files for each data set).
             
         save_srag : bool, optional
             Whether to save the original SRAG data set retrieved from source 
@@ -798,29 +823,31 @@ class SUSurv(Repository):
         (Generates files in the local repository)
 
         '''
+        if self.__open:
+            self.close_db_processing()
         
         # ADJUST FOR self.__dfs_proc = {db_ref : pandas.dataframe    
         print('\n>> started SUSurv saving process\n.')
-        self.__log_proc['concat'] = concat
-        self.__log_proc['save_srag'] = save_srag
         
-        if concat:
-            if isinstance(self.__df20, pd.DataFrame) and isinstance(self.__df21, pd.Dataframe):
-                self.__set_concat()
-            else:
-                warnings.warn('Missing processed data set to concatenate. Single dataframes will be saved instead')
-            
         # generate processed folder and save dbs (sep or concat)
         self._create_proc_folder()
-        if isinstance(self.__df_concat, pd.DataFrame):
+        
+        # save files in Repository
+        if concat:
+            self.__set_concat()
             self._save_proc_file(self.__df_concat, 'concat')
         else:
-            if isinstance(self.__df20, pd.DataFrame):
-                self._save_proc_file(self.__df20, 'srag20')
-            if isinstance(self.__df21, pd.DataFrame):
-                self._save_proc_file(self.__df21, 'srag21')
-            
+            for db_ref, df in self.__dfs_proc.items():
+                self._save_proc_file(df, db_ref)
+        
+        # update logs
+        self.__log_gen['save_concat'] = concat
+        self.__log_gen['save_orig'] = save_srag
+        self.proc_status()
+        
+        self.__loc_proc['general_info'] = self.__log_gen
         self._close_repo(save_orig=save_srag, proc_log=self.__log_proc)
+        self.__init__() # reset the class obj
         return
     
     #==================================================
@@ -830,7 +857,7 @@ class SUSurv(Repository):
     #
     #==================================================
     
-    def data_processing(self, db_ref, clin_feat_gen=True, demo_feat=True, lab_feat=False, ibge_data=False, **kwargs):
+    def data_processing(self, db_ref, clin_feat_gen=True, demo_feat=True, lab_feat=False, ibge_data=False):
         '''
         Data processing proceadure
 
@@ -879,72 +906,3 @@ class SUSurv(Repository):
         self.close_db_processing()
         
         return
-
-
-
-########################################################################
-########################################################################
-#                         SCRIPT EXECUTION                             #
-########################################################################
-########################################################################
-
-
-def processing_pipeline(dbs, download, **kwargs):
-    '''
-    Pipeline for processing SRAG database into survival data.
-    '''
-    
-    # create class of SUSurv
-    surv_proc = SUSurv()
-    
-    for db in dbs:
-        if download: surv_proc.download_opendatasus(db)
-        surv_proc.data_processing(db, **kwargs)
-    
-    surv_proc.save(**kwargs)
-        
-    return
-
-
-if __name__ == '__main__':
-
-    # ARG PARSE SETTINGS
-    parser = argparse.ArgumentParser(description="Script to automatically retrieve SRAG databases from openDataSUS and process into survival data")
-    
-    parser.add_argument("--db", 
-                        choices=["srag20", "srag21", "both"],
-                        default="both", type=str, 
-                        help="Srag databases to process")
-    parser.add_argument("--concat", action='store_true', 
-                        help="If --db=both, saves srag20 and srag21 in a single processed data file")
-    parser.add_argument("--nocrawler", action='store_true', 
-                        help="Do not download the updated databases from openDataSUS: uses the dbs in the repository")
-    parser.add_argument("--nosave", action='store_true', 
-                        help="Do not save the original (downloaded) openDataSUS databases. Else, overrides the dbs in the repository")
-    parser.add_argument("--event", 
-                        choices=["icu","icu_death", "death"],
-                        default="obitoUTI", type=str,
-                        help="The survival event")
-    ## ADD ALL data_processing params
-
-    args = parser.parse_args()
-    kwargs = vars(args)
-    
-    # PARAMS OF FUNCTION: processing_pipeline
-    if args.db=='both':
-        dbs = ["srag20", "srag21"]
-    else:
-        dbs = [args.db]
-    del kwargs['db']
-    
-    if args.nocrawler:
-        download = False
-    else:
-        download = True
-    del kwargs['nocrawler']
-    
-    if args.nosave:
-        kwargs['save_srag'] = False
-    del kwargs['nosave']
-    
-    processing_pipeline(dbs, download, **kwargs)
