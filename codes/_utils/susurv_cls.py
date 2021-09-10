@@ -32,20 +32,19 @@ ADJUSTMENT:
     SAVE A '_log.txt' FILE INSIDE OUTPUT FOLDER <PATH+\\openDataSUS\\process_data_DATESTAMP> (include path of this script)
 '''
 
-import argparse
 import json
 import numpy as np
 import os
 import pandas as pd
-import warnings
 
 from datetime import date, datetime
-from _utils.repository_cls import Repository
+from repository_cls import Repository
 
 
 class SUSurv(Repository):
     
     __EVENTS = ['icu', 'icu_death', 'death']
+    __CLOSE_MSG = 'No data processing is open. Please, SUSurv.open_db_processing(db_ref)'
     
     def __init__(self):
         super().__init__()
@@ -53,19 +52,21 @@ class SUSurv(Repository):
         self.__dfs_proc = {}
         self.__df_concat = None
         
-        # Data Processing 
+        # Survival Definitions
         self.__surv_status_feat = 'survival_status'
         self.__surv_time_feat = 'survival_time'
-        self.__begin_study_feat = ['DT_NOTIFIC', 'DT_SIN_PRI', 'DT_INTERNA']
-        self.__end_study_feat_def = {'icu': ['DT_ENTUTI', 'DT_EVOLUCA', 'DT_ENCERRA', 'DT_DIGITA'],
-                                     'icu_death': ['DT_ENTUTI', 'DT_EVOLUCA', 'DT_ENCERRA', 'DT_DIGITA'],
-                                     'death': ['DT_EVOLUCA', 'DT_ENCERRA', 'DT_DIGITA']
-                                     }
-        self.__censor_study_feat_def = {'icu': self.__begin_study_feat,
-                                        'icu_death': self.__begin_study_feat,
-                                        'death': self.__begin_study_feat + ['DT_ENTUTI']
-                                        }
+        self.__dt_begin_study = ['DT_NOTIFIC', 'DT_SIN_PRI', 'DT_INTERNA']
+        self.__dt_event_def = {'icu': ['DT_ENTUTI'],                        # the features must be in a list (even when only one)
+                               'icu_death': ['DT_ENTUTI', 'DT_EVOLUCA'],
+                               'death': ['DT_EVOLUCA']
+                               }
+        self.__dt_right_censor_def = {'icu': self.__dt_begin_study,
+                                      'icu_death': self.__dt_begin_study,
+                                      'death': self.__dt_begin_study + ['DT_ENTUTI']
+                                      }
         self.__dt_begin_th = datetime.strptime('2019-12-01', '%Y-%m-%d') # date considered for the beggining of the Survival Study
+        
+        # Data Processing 
         ## [modifief in] processing in open/close_db_processing methods
         self.__db_ref_inproc = None
         self.__surv_event_def = None
@@ -83,7 +84,8 @@ class SUSurv(Repository):
                               'case_selection': [],
                               'feat_selection': False,
                               'generate_clinical_feat': False,
-                              'add_ibge_feats': False
+                              'add_ibge_feats': False,
+                              'case_tree': {}
                              }
         self.__log_gen = {'datastamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                           'code-path': str(os.path.dirname(__file__)).replace('\\','/') + '/' + str(os.path.basename(__file__)),
@@ -103,6 +105,10 @@ class SUSurv(Repository):
     def __verify_event(event):
         if not event in SUSurv.__EVENTS:
             raise ValueError('The survival event to consider is not defined: {}. Please, set event={} while oppening the processing mode.'.format(event, SUSurv.__EVENTS))
+    
+    def __verify_opening(self):
+        if not self.__open:
+            raise ValueError(SUSurv.__CLOSE_MSG)        
     
     @property
     def __db_ref_proc(self):
@@ -125,6 +131,7 @@ class SUSurv(Repository):
 
     def __open_db_processing(self, db_ref, event, input_cens, case_selection):
         # loads the parameters of open_db_processing plus the processing DataFrame and __open flag
+        self.__open = True
         self.__set_log_db_processing(db_ref, event, input_cens)
         self.__db_ref_inproc = db_ref
         self.__surv_event_def = event
@@ -134,15 +141,14 @@ class SUSurv(Repository):
         # load < self.__df_inproc > for the first time
         if not self._has_db(db_ref):
             self.download_opendatasus(db_ref)
-        self.__df_inproc = self.get_original_data(db_ref)
+        self.__update_df_inproc(self.get_original_data(db_ref), 'original_srag')
         
         if case_selection:
             self.case_selection()
         # set DT features to date type
-        self.update_df_inproc(self.__date_process(self.inproc_data_))
+        self.__update_df_inproc(self.__date_process(self.inproc_data_), 'date_process')
         # generates survival data
         self.__set_survival_data()
-        self.__open = True
         return
         
     def __reset_db_processing(self):
@@ -172,7 +178,7 @@ class SUSurv(Repository):
     #   - Inplace function (modify the in-processing data)
     #==================================================
     
-    def __set_survival_data(self, df):
+    def __set_survival_data(self):
         '''
         Generate the Time and Status Survival features.
         Pipeline:
@@ -193,22 +199,36 @@ class SUSurv(Repository):
         '''
         print('.. survival features generation')
         
-        self.case_selection()
-        
         df = self.inproc_data_
-        df = self.__set_dt_study_feats(df)
         
-        # Feature <survival_status>
-        df[self.surv_status_feat_] = self.__get_surv_events(df)
-        df = self.__handle_censoring(df)
+        ### SET STUDY DATES: study begin and event outcome
         
-        # Feature <survival_time>
-        df[self.surv_time_feat] = (df.DT_SURV_END - df.DT_SURV_BEGIN).dt.days
-        df.dropna(axis='index', subset=[self.surv_time_feat], inplace=True)     # drop <survival_time=NaN> (cases: <DT_SURV_END=NaN & event=True & dt_censor=NaN> OR <DT_SURV_BEGIN=NaN>)
+        # BEGIN DATE: minimum date between self.__dt_begin_study given that it is between the begin/end threshold-dates
+        df['DT_SURV_BEGIN'] = df[self.__dt_begin_study].apply(lambda row: row[(row >= self.__dt_begin_th) & (row < self.__dt_end_th)].min(), axis='columns')
+        df.dropna(axis='index', subset=['DT_SURV_BEGIN'], inplace=True) # no registered date for the beggining of survival study
         
-        self.__update_df_inproc(df)
+        # EVENT DATE:
+        if len(self.__dt_event) > 1:
+            # if more than one event date: selects the minimum between the possible event dates
+            df['DT_SURV_EVENT'] = df[self.__dt_event].apply(lambda row: row[(row > df['DT_SURV_BEGIN'].loc[row.name]) & (row <= self.__dt_end_th)].min(), axis='columns')
+        else:
+            # only one possible event date
+            df['DT_SURV_EVENT'] = df[self.__dt_event[0]]
+        # Filters valid event dates: returns the event date if it is greater than beggining and less/equal to end_th
+        df['DT_SURV_EVENT'] = df['DT_SURV_EVENT'].where(self.__validate_dt_feat('DT_SURV_EVENT', df), np.nan)
+        
+        ### SURVIVAL STATUS Feature
+        df[self.survival_status_feat_] = self.__get_surv_events(df)
+        # Handles missing data for event date DT_SURV_EVENT: called after defining the event because of < Event=True > and <DT_Event=NaN> cases to imput right-censoring
+        df = self.__handle_missing_event_dt(df)
+        
+        # SURVIVAL TIME Feature
+        df[self.survival_time_feat_] = (df.DT_SURV_EVENT - df.DT_SURV_BEGIN).dt.days
+        # drop <survival_time=NaN> (cases: <DT_SURV_END=NaN & event=True & dt_censor=NaN>
+        df.dropna(axis='index', subset=[self.survival_time_feat], inplace=True)     
+        
+        self.__update_df_inproc(df, 'survival_data')
         return
-    
     
     
     #==================================================
@@ -219,12 +239,12 @@ class SUSurv(Repository):
     #==================================================
     
     @property
-    def __end_study_feat(self):
-        return self.__end_study_feat_def[self.event_]
+    def __dt_event(self):
+        return self.__dt_event_def[self.event_]
     
     @property
-    def __censor_study_feat(self):
-        return self.__censor_study_feat_def[self.event_]
+    def __dt_right_censor(self):
+        return self.__dt_right_censor_def[self.event_]
         
     @property
     def __dt_end_th(self):
@@ -232,26 +252,9 @@ class SUSurv(Repository):
             return datetime.strptime(self.__db_datestamp, '%Y-%m-%d')
         else:
             return None
-    
-    def __set_dt_study_feats(self, df):
-        '''
-        This function generates the beggining and final survival study dates.
-    
-        Parameters
-        ----------
-        df : pd.DataFrame
-            Processing dataframe.
-    
-        Returns
-        -------
-        pd.DataFrame
-    
-        '''
-        # minimum date between self.__begin_study_feat given that it is between the threshold begin/end-dates
-        df['DT_SURV_BEGIN'] = df[self.__begin_study_feat].apply(lambda row: row[(row >= self.__dt_begin_th) & (row <= self.__dt_end_th)].min(), axis='columns')
-        # minimum date between self.__end_study_feat given that it is between the selected date for DT_SURV_BEGIN and the threshold end-date
-        df['DT_SURV_END'] = df[self.__end_study_feat].apply(lambda row: row[(row >= df['DT_SURV_BEGIN'].loc[row.name]) & (row <= self.__dt_end_th)].min(), axis='columns')
-        return df
+        
+    def __validate_dt_feat(self, feat, df):
+        return (df[feat] > df['DT_SURV_BEGIN']) & (df[feat] <= self.__dt_end_th)
     
     def __get_surv_events(self, df):
         '''
@@ -270,20 +273,27 @@ class SUSurv(Repository):
 
         '''
         
-        valid_dt_uti = df['DT_ENTUTI'].where((df['DT_ENTUTI'] >= df['DT_SURV_BEGIN']) & (df['DT_ENTUTI'] <= df['DT_SURV_END']))
-        
-        if self.event_=='icu':
-            return (df['UTI'] == 'sim') | valid_dt_uti
-        elif self.event_=='icu_death':
-            return (df['UTI'] == 'sim') | valid_dt_uti | (df['EVOLUCAO'] == 'obito')
-        elif self.event_=='death':
+        if self.event_=='death':
             return (df['EVOLUCAO'] == 'obito')
-    
-    def __handle_censoring(self, df):
+        else:
+            has_valid_icu_dt = self.__validate_dt_feat(feat='DT_ENTUTI', df=df)
+            if self.event_=='icu':
+                return (df['UTI'] == 'sim') | has_valid_icu_dt
+            elif self.event_=='icu_death':
+                return (df['UTI'] == 'sim') | has_valid_icu_dt | (df['EVOLUCAO'] == 'obito')
+        
+    def __handle_missing_event_dt(self, df):
         '''
-        Adjusts the survival status feature handling missing values for DT_SURV_END study date.
-        By default, inputs the date of data retrival.
-        If processing method is open with input_cens=True, performs a adjusted censoring inputtation. 
+        Handles missing values for DT_SURV_EVENT study date.
+            
+            - Default:
+                Inputs the date of data retrival for censored cases missing DT_SURV_EVENT, 
+                and removes remaining missing values.
+            - input_cens=True:
+                If processing method is open with input_cens=True, 
+                handles event True cases with missing DT_SURV_EVENT by replacing 
+                DT_SURV_EVENT with the latest known DT_ before DT_SURV_EVENT 
+                (accordingly to defined in < __dt_right_censor_def >)
 
         Parameters
         ----------
@@ -295,31 +305,35 @@ class SUSurv(Repository):
         pd.DataFrame
 
         '''
-        df = df.copy()
+        ## CENSORED CASES:
+        # For already censored cases, missing DT_SURV_EVENT is inputted as the final study date __dt_end_th
+        rpl_vals = ~df[self.survival_status_feat_] & df['DT_SURV_EVENT'].isna()
+        df['DT_SURV_EVENT'] = df['DT_SURV_EVENT'].mask(rpl_vals, self.__dt_end_th)
+        
+        ## INPUT RIGHT CENSORING
+        # For event True cases with no DT_SURV_EVENT, DT_SURV_EVENT is replaced with latest known DT_ before DT_SURV_EVENT >> defined by __dt_right_censor_def
         if self.__input_cens:
-            return self.__adjusted_input_censor(df)
-        else: 
-            return self.__default_input_censor(df)
-    
-    def __default_input_censor(self, df):
-        # handling <DT_SURV_END = NaT>
-        df['DT_SURV_END'].mask(df['DT_SURV_END'].isna(), self.__dt_end_th, inplace=True)  # change <DT_SURV_END=NaN > with __dt_end_th
+            df = self.__input_right_censoring(df)
+        
+        # Remove remaining missing DT_SURV_EVENT
+        df.dropna(axis='index', subset=['DT_SURV_EVENT'], inplace=True)
         return df
+    
+    def __input_right_censoring(self, df):
         
-        
-    def __adjusted_input_censor(self, df):
-        # date of censoring
-        
-        # selects intermediate date after (not including) DT_SURV_BEGIN and before (not including) 
-        dt_censor = df[self.__censor_study_feat].apply(lambda row: row[(row > df['DT_SURV_BEGIN'].loc[row.name]) & (row < df['DT_SURV_END'].loc[row.name])].min(), axis='columns')
-        
+        if len(self.__dt_right_censor) > 1:
+            # if more than one event date: selects the maximum between the possible censor dates
+            dt_censor = df[self.__dt_right_censor].apply(lambda row: row[(row > df['DT_SURV_BEGIN'].loc[row.name]) & (row <= self.__dt_end_th)].max(), axis='columns')
+        else:
+            # only one possible event date
+            dt_censor = df[self.__dt_right_censor[0]]
+            
         # handling <DT_SURV_END = NaT> for EVENT=True
-        cond_evTrue = (df['DT_SURV_END'].isna()) & (dt_censor.notnull()) & (df[self.surv_status_feat_]==True)    # condition for replacing NaN DT_SURV_END
-        df['DT_SURV_END'].mask(cond_evTrue, dt_censor, inplace=True)                                             # change <DT_SURV_END=NaN & event=True & dt_censor> with dt_censor
-        df[self.surv_status_feat].mask(cond_evTrue, False, inplace=True)                                         # status=False for replaced <DT_SURV_END=NaN & event=True & dt_censor>
+        rpl_vals =  df[self.survival_status_feat_] & df['DT_SURV_END'].isna() & dt_censor.notnull()    # condition for replacing NaN DT_SURV_END
+        df['DT_SURV_END'].mask(rpl_vals, dt_censor, inplace=True)                                  # change <DT_SURV_END=NaN & event=True & dt_censor> with dt_censor
+        df[self.survival_status_feat_].mask(rpl_vals, False, inplace=True)                         # right cesor: status=False for cases replaced with censor date
 
-        # handling <DT_SURV_END = NaT>
-        return self.__default_input_censor(df)
+        return df
     
     
     #==================================================
@@ -486,8 +500,10 @@ class SUSurv(Repository):
 
         return df
     
-    def __update_df_inproc(self, df):
+    def __update_df_inproc(self, df, _id):
        self.__df_inproc = df.copy()
+       self.__log_proc[self.inproc_]['case_tree'][_id] = df.shape[0]
+       return
     
     
 
@@ -496,6 +512,13 @@ class SUSurv(Repository):
     #                  PUBLIC ATTRIBUTES AND METHODS                      #
     #######################################################################
     #######################################################################
+    
+    @property
+    def open_proc_(self):
+        if self.__open:
+            return self.inproc_
+        else:
+            return False
     
     @property
     def survival_status_feat_(self):
@@ -507,14 +530,17 @@ class SUSurv(Repository):
     
     @property
     def inproc_(self):
+        self.__verify_opening()
         return self.__db_ref_inproc
     
     @property
     def inproc_data_(self):
+        self.__verify_opening()
         return self.__df_inproc.copy()
     
     @property
     def event_(self):
+        self.__verify_opening()
         return self.__surv_event_def
     
     def proc_status(self):
@@ -527,6 +553,7 @@ class SUSurv(Repository):
 
         '''
         print('\n=== DATA PROCESSING STATUS ===')
+        print('>> open processing: {}'.format(self.open_proc_))
         print('\n>> General Configs:')
         print('proc datastamp: {}'.format(self.__log_gen['datastamp']))
         print('proc code-path: {}'.format(self.__log_gen['code-path']))
@@ -546,8 +573,8 @@ class SUSurv(Repository):
     
     def survival_status(self):
         # The survival status, with adjusted censoring
-        if self.__open: return self.__df_inproc[self.surv_status_feat_]
-        else: return None
+        self.__verify_opening()
+        return self.__df_inproc[self.survival_status_feat_]
     
     def open_db_processing(self, db_ref, event='death', input_cens=True, case_selection=True):
         '''
@@ -652,7 +679,7 @@ class SUSurv(Repository):
             df = self.__covid_positive_cases(df)
         # add here future input args selection
         
-        self.__update_df_inproc(df)
+        self.__update_df_inproc(df, 'case_selection_{}'.format(method))
         return
     
     def feat_selection(self, clin_feat_gen=False, demo_feat=False, lab_feat=False):
@@ -701,7 +728,7 @@ class SUSurv(Repository):
         
         df = self.inproc_data_
         df = df[feats]
-        self.__update_df_inproc(df)
+        self.__update_df_inproc(df, 'feat_selection')
         
         # generate new clinical features from text search and feature unification
         if clin_feat_gen:
@@ -783,7 +810,7 @@ class SUSurv(Repository):
         upper_cases = {col: col.upper() for col in df.columns}
         df.rename(columns=upper_cases, inplace=True)
         
-        self.__update_df_inproc(df)
+        self.__update_df_inproc(df, 'generate_clin_feat')
         return 
     
     def add_ibge_feats(self):
