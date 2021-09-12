@@ -55,6 +55,7 @@ class SUSurv(Repository):
         # Survival Definitions
         self.__surv_status_feat = 'survival_status'
         self.__surv_time_feat = 'survival_time'
+        self.__dt_study_feat = ('DT_SURV_BEGIN','DT_SURV_EVENT')
         self.__dt_begin_study = ['DT_NOTIFIC', 'DT_SIN_PRI', 'DT_INTERNA']
         self.__dt_event_def = {'icu': ['DT_ENTUTI'],                        # the features must be in a list (even when only one)
                                'icu_death': ['DT_ENTUTI', 'DT_EVOLUCA'],
@@ -202,20 +203,22 @@ class SUSurv(Repository):
         df = self.inproc_data_
         
         ### SET STUDY DATES: study begin and event outcome
+        dt_begin = self.__dt_study_feat[0]
+        dt_event = self.__dt_study_feat[1]
         
         # BEGIN DATE: minimum date between self.__dt_begin_study given that it is between the begin/end threshold-dates
-        df['DT_SURV_BEGIN'] = df[self.__dt_begin_study].apply(lambda row: row[(row >= self.__dt_begin_th) & (row < self.__dt_end_th)].min(), axis='columns')
-        df.dropna(axis='index', subset=['DT_SURV_BEGIN'], inplace=True) # no registered date for the beggining of survival study
+        df[dt_begin] = df[self.__dt_begin_study].apply(lambda row: row[(row >= self.__dt_begin_th) & (row < self.__dt_end_th)].min(), axis='columns')
+        df.dropna(axis='index', subset=[dt_begin], inplace=True) # no registered date for the beggining of survival study
         
         # EVENT DATE:
         if len(self.__dt_event) > 1:
             # if more than one event date: selects the minimum between the possible event dates
-            df['DT_SURV_EVENT'] = df[self.__dt_event].apply(lambda row: row[(row > df['DT_SURV_BEGIN'].loc[row.name]) & (row <= self.__dt_end_th)].min(), axis='columns')
+            df[dt_event] = df[self.__dt_event].apply(lambda row: row[(row > df[dt_begin].loc[row.name]) & (row <= self.__dt_end_th)].min(), axis='columns')
         else:
             # only one possible event date
-            df['DT_SURV_EVENT'] = df[self.__dt_event[0]]
+            df[dt_event] = df[self.__dt_event[0]]
         # Filters valid event dates: returns the event date if it is greater than beggining and less/equal to end_th
-        df['DT_SURV_EVENT'] = df['DT_SURV_EVENT'].where(self.__validate_dt_feat('DT_SURV_EVENT', df), np.nan)
+        df[dt_event] = df[dt_event].where(self.__validate_dt_feat(dt_event, df), np.nan)
         
         ### SURVIVAL STATUS Feature
         df[self.survival_status_feat_] = self.__get_surv_events(df)
@@ -254,7 +257,7 @@ class SUSurv(Repository):
             return None
         
     def __validate_dt_feat(self, feat, df):
-        return (df[feat] > df['DT_SURV_BEGIN']) & (df[feat] <= self.__dt_end_th)
+        return (df[feat] > df[self.__dt_study_feat[0]]) & (df[feat] <= self.__dt_end_th)
     
     def __get_surv_events(self, df):
         '''
@@ -304,10 +307,12 @@ class SUSurv(Repository):
         pd.DataFrame
 
         '''
+        
+        dt_event = self.__dt_study_feat[1]
         ## CENSORED CASES:
         # For already censored cases, missing DT_SURV_EVENT is inputted as the final study date __dt_end_th
-        rpl_vals = ~df[self.survival_status_feat_] & df['DT_SURV_EVENT'].isna()
-        df['DT_SURV_EVENT'] = df['DT_SURV_EVENT'].mask(rpl_vals, self.__dt_end_th)
+        rpl_vals = ~df[self.survival_status_feat_] & df[dt_event].isna()
+        df[dt_event] = df[dt_event].mask(rpl_vals, self.__dt_end_th)
         
         ## INPUT RIGHT CENSORING
         # For event True cases with no DT_SURV_EVENT, DT_SURV_EVENT is replaced with latest known DT_ before DT_SURV_EVENT >> defined by __dt_right_censor_def
@@ -315,22 +320,23 @@ class SUSurv(Repository):
             df = self.__input_right_censoring(df)
         
         # Remove remaining missing DT_SURV_EVENT
-        df.dropna(axis='index', subset=['DT_SURV_EVENT'], inplace=True)
+        df.dropna(axis='index', subset=[dt_event], inplace=True)
         return df
     
     def __input_right_censoring(self, df):
         
         if len(self.__dt_right_censor) > 1:
-            # if more than one event date: selects the maximum between the possible censor dates
-            dt_censor = df[self.__dt_right_censor].apply(lambda row: row[(row > df['DT_SURV_BEGIN'].loc[row.name]) & (row <= self.__dt_end_th)].max(), axis='columns')
+            # if more than one possible censor date: selects the maximum between the possible dates
+            dt_censor = df[self.__dt_right_censor].apply(lambda row: row[(row > df[self.__dt_study_feat[0]].loc[row.name]) & (row <= self.__dt_end_th)].max(), axis='columns')
         else:
             # only one possible event date
             dt_censor = df[self.__dt_right_censor[0]]
             
         # handling <DT_SURV_EVENT = NaT> for EVENT=True
-        rpl_vals =  df[self.survival_status_feat_] & df['DT_SURV_EVENT'].isna() & dt_censor.notnull()   # condition for replacing NaN DT_SURV_EVENT
-        df['DT_SURV_EVENT'].mask(rpl_vals, dt_censor, inplace=True)                                     # change <DT_SURV_EVENT=NaN & event=True & dt_censor> with dt_censor
-        df[self.survival_status_feat_].mask(rpl_vals, False, inplace=True)                              # right cesor: status=False for cases replaced with censor date
+        dt_event = self.__dt_study_feat[1]
+        rpl_vals =  df[self.survival_status_feat_] & df[dt_event].isna() & dt_censor.notnull()   # condition for replacing NaN DT_SURV_EVENT
+        df[dt_event].mask(rpl_vals, dt_censor, inplace=True)                                     # change <DT_SURV_EVENT=NaN & event=True & dt_censor> with dt_censor
+        df[self.survival_status_feat_].mask(rpl_vals, False, inplace=True)                       # right cesor: status=False for cases replaced with censor date
 
         return df
     
@@ -558,6 +564,10 @@ class SUSurv(Repository):
         return self.__surv_time_feat
     
     @property
+    def study_dt_feat_(self):
+        return list(self.__dt_study_feat)
+    
+    @property
     def study_interval_(self):
         return (self.__dt_begin_study, self.__dt_event_def[self.event_])
     
@@ -606,7 +616,7 @@ class SUSurv(Repository):
         for db in self.__log_proc.keys():
             print('\n- Data set: {}'.format(db))
             print('event: {}'.format(self.__log_proc[db]['event_']))
-            print('input censoring: {}'.format(self.__log_proc[db]['input_cens_']))
+            print('input right-censoring: {}'.format(self.__log_proc[db]['input_cens_']))
             print('data set datestamp: {}'.format(self.__log_proc[db]['db_datestamp_']))
             print('case selection: {}'.format(self.__log_proc[db]['case_selection']))
             print('feature selection: {}'.format(self.__log_proc[db]['feat_selection']))
