@@ -1,16 +1,1 @@
-[
-  'SG_UF_NOT',
-  'CO_MUN_NOT',
-  'CO_UNI_NOT',
-  'ID_PAIS',
-  'SG_UF',
-  'CO_MUN_RES',
-  'SG_UF_INTE',
-  'CO_MU_INTE',
-  'CS_SEXO',
-  'NU_IDADE_N',
-  'TP_IDADE',
-  'CS_RACA',
-  'CS_ESCOL_N',
-  'SUPORT_VEN' 
-]
+["SG_UF_NOT", "CO_MUN_NOT", "CO_UNI_NOT", "ID_PAIS", "SG_UF", "CO_MUN_RES", "SG_UF_INTE", "CO_MU_INTE", "CS_SEXO", "NU_IDADE_N", "TP_IDADE", "CS_RACA", "CS_ESCOL_N", "SUPORT_VEN"]

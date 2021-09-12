@@ -44,7 +44,7 @@ from repository_cls import Repository
 class SUSurv(Repository):
     
     __EVENTS = ['icu', 'icu_death', 'death']
-    __CLOSE_MSG = 'No data processing is open. Please, SUSurv.open_db_processing(db_ref)'
+    __CLOSE_MSG = 'No data processing is open. Please, SUSurv.open_surv_processing(db_ref)'
     
     def __init__(self):
         super().__init__()
@@ -130,7 +130,7 @@ class SUSurv(Repository):
         return
 
     def __open_db_processing(self, db_ref, event, input_cens, case_selection):
-        # loads the parameters of open_db_processing plus the processing DataFrame and __open flag
+        # loads the parameters of open_surv_processing plus the processing DataFrame and __open flag
         self.__open = True
         self.__set_log_db_processing(db_ref, event, input_cens)
         self.__db_ref_inproc = db_ref
@@ -152,7 +152,7 @@ class SUSurv(Repository):
         return
         
     def __reset_db_processing(self):
-        # resets the parameters of open_db_processing plus the processing DataFrame and __open flag
+        # resets the parameters of open_surv_processing plus the processing DataFrame and __open flag
         self.__db_ref_inproc = None
         self.__surv_event_def = None
         self.__input_cens = None
@@ -161,7 +161,7 @@ class SUSurv(Repository):
         self.__open = False
         
     def __reopen_db_processing(self, db_ref):
-        # loads the parameters of open_db_processing plus the processing DataFrame and __open flag
+        # loads the parameters of open_surv_processing plus the processing DataFrame and __open flag
         self.__db_ref_inproc = db_ref
         self.__surv_event_def = self.__log_proc[db_ref]['event_']
         self.__input_cens = self.__log_proc[db_ref]['input_cens_']
@@ -224,8 +224,8 @@ class SUSurv(Repository):
         
         # SURVIVAL TIME Feature
         df[self.survival_time_feat_] = (df.DT_SURV_EVENT - df.DT_SURV_BEGIN).dt.days
-        # drop <survival_time=NaN> (cases: <DT_SURV_END=NaN & event=True & dt_censor=NaN>
-        df.dropna(axis='index', subset=[self.survival_time_feat], inplace=True)     
+        # drop <survival_time=NaN> (cases: <DT_SURV_EVENT=NaN & event=True & dt_censor=NaN>
+        df.dropna(axis='index', subset=[self.survival_time_feat_], inplace=True)     
         
         self.__update_df_inproc(df, 'survival_data')
         return
@@ -276,11 +276,10 @@ class SUSurv(Repository):
         if self.event_=='death':
             return (df['EVOLUCAO'] == 'obito')
         else:
-            has_valid_icu_dt = self.__validate_dt_feat(feat='DT_ENTUTI', df=df)
             if self.event_=='icu':
-                return (df['UTI'] == 'sim') | has_valid_icu_dt
+                return (df['UTI'] == 'sim') | self.__validate_dt_feat(feat='DT_ENTUTI', df=df)
             elif self.event_=='icu_death':
-                return (df['UTI'] == 'sim') | has_valid_icu_dt | (df['EVOLUCAO'] == 'obito')
+                return (df['UTI'] == 'sim') | self.__validate_dt_feat(feat='DT_ENTUTI', df=df) | (df['EVOLUCAO'] == 'obito')
         
     def __handle_missing_event_dt(self, df):
         '''
@@ -328,10 +327,10 @@ class SUSurv(Repository):
             # only one possible event date
             dt_censor = df[self.__dt_right_censor[0]]
             
-        # handling <DT_SURV_END = NaT> for EVENT=True
-        rpl_vals =  df[self.survival_status_feat_] & df['DT_SURV_END'].isna() & dt_censor.notnull()    # condition for replacing NaN DT_SURV_END
-        df['DT_SURV_END'].mask(rpl_vals, dt_censor, inplace=True)                                  # change <DT_SURV_END=NaN & event=True & dt_censor> with dt_censor
-        df[self.survival_status_feat_].mask(rpl_vals, False, inplace=True)                         # right cesor: status=False for cases replaced with censor date
+        # handling <DT_SURV_EVENT = NaT> for EVENT=True
+        rpl_vals =  df[self.survival_status_feat_] & df['DT_SURV_EVENT'].isna() & dt_censor.notnull()   # condition for replacing NaN DT_SURV_EVENT
+        df['DT_SURV_EVENT'].mask(rpl_vals, dt_censor, inplace=True)                                     # change <DT_SURV_EVENT=NaN & event=True & dt_censor> with dt_censor
+        df[self.survival_status_feat_].mask(rpl_vals, False, inplace=True)                              # right cesor: status=False for cases replaced with censor date
 
         return df
     
@@ -361,6 +360,13 @@ class SUSurv(Repository):
                 feats += json.load(f)
         return feats
     
+    def __clin_feats(self):
+        if self.__log_proc[self.__db_ref_inproc]['generate_clinical_feat']:
+            return self.__generated_clin_feat
+        else:
+            with open(self._file_clin_feat, 'r') as f: 
+                return json.load(f)
+    
     def __demo_feats(self):
         with open(self._file_demo_feat, 'r') as f: 
             feats = json.load(f)
@@ -386,12 +392,38 @@ class SUSurv(Repository):
         This function selects the transactions that are COVID positive. 
         The selection is a disjunction of the following conditions:
         (CLASSI_FIN=='covid19'):                 final diagnosis of the case
+        (AN_SARS2==True):                        
         (PCR_SARS2==True):                       RT-PCR for SARS-CoV-2 result
-        (POS_AN_OUT=='nao' & POS_AN_FLU=='nao'): results of testing other respiratory disease (OUT) and influenza (FLU)
+        (RES_IGM==True):
+        (RES_IGA==True): 
         '''        
         return df[(df.CLASSI_FIN=='covid19') | (df.AN_SARS2==True) | (df.PCR_SARS2==True) | (df.RES_IGM==True) | (df.RES_IGA==True)].copy()
     
-
+    def __hospitalised_cases(self, df):
+        '''
+        This function selects the transactions that were hospitalised
+        The selection is a disjunction of the following conditions:
+        (HOSPITAL=='sim'):      Hospitalised patient
+        (DT_INTERNA):           Valid date of hospitalisation
+        (UTI=='sim'):           ICU hospitalisation                 
+        (DT_ENTUTI):            Valid date of ICU hospitalisation
+        '''        
+        return df[(df.HOSPITAL=='sim') | self.__validate_dt_feat('DT_INTERNA', df) | (df.UTI == 'sim') | self.__validate_dt_feat(feat='DT_ENTUTI', df=df)].copy()
+    
+    def __full_clin_cases(self, df):
+        '''
+        This function selects the transactions with full information on 
+        clinical features
+        '''        
+        return df.dropna(axis='index', how='any', subset=self.__clin_feats(), inplace=False)
+    
+    def __full_demo_cases(self, df):
+        '''
+        This function selects the transactions with full information on 
+        clinical features
+        '''        
+        return df.dropna(axis='index', how='any', subset=self.__demo_feats, inplace=False)
+    
     #==================================================
     #  DATAFRAME MANIPULATION
     # 
@@ -514,11 +546,8 @@ class SUSurv(Repository):
     #######################################################################
     
     @property
-    def open_proc_(self):
-        if self.__open:
-            return self.inproc_
-        else:
-            return False
+    def open_(self):
+        return self.__open
     
     @property
     def survival_status_feat_(self):
@@ -527,6 +556,18 @@ class SUSurv(Repository):
     @property
     def survival_time_feat_(self):
         return self.__surv_time_feat
+    
+    @property
+    def study_interval_(self):
+        return (self.__dt_begin_study, self.__dt_event_def[self.event_])
+    
+    @property
+    def clin_feat_(self):
+        return self.__clin_feats()
+    
+    @property
+    def demo_feat_(self):
+        return self.__demo_feats()
     
     @property
     def inproc_(self):
@@ -553,7 +594,9 @@ class SUSurv(Repository):
 
         '''
         print('\n=== DATA PROCESSING STATUS ===')
-        print('>> open processing: {}'.format(self.open_proc_))
+        print('>> running data processing: {}'.format(self.open_))
+        if self.__open:
+            print('>> data set in processing: {}'.format(self.inproc_))
         print('\n>> General Configs:')
         print('proc datastamp: {}'.format(self.__log_gen['datastamp']))
         print('proc code-path: {}'.format(self.__log_gen['code-path']))
@@ -571,12 +614,26 @@ class SUSurv(Repository):
             print('ibge data: {}'.format(self.__log_proc[db]['add_ibge_feats']))
         return
     
+    def case_selection_tree(self):
+        '''
+        Tree of case selection.
+
+        Returns
+        -------
+        Dictionary
+            The keys are identification of the method that modified the data set 
+            and the values are the total number of transations that remained in
+            the data set.
+
+        '''
+        return self.__log_proc[self.inproc_]['case_tree']
+    
     def survival_status(self):
         # The survival status, with adjusted censoring
         self.__verify_opening()
         return self.__df_inproc[self.survival_status_feat_]
     
-    def open_db_processing(self, db_ref, event='death', input_cens=True, case_selection=True):
+    def open_surv_processing(self, db_ref, event='death', input_cens=True, case_selection=True):
         '''
         Open the processing mode for a data set 
             
@@ -601,14 +658,14 @@ class SUSurv(Repository):
         self._verify_db(db_ref)
         self.__verify_event(event)
         if self.__open:
-            self.close_db_processing()
+            self.close_surv_processing()
         
         if db_ref in self.__db_ref_proc:
             self.__reopen_db_processing(db_ref)
         else:
             self.__open_db_processing(db_ref, event, input_cens, case_selection)
     
-    def close_db_processing(self):
+    def close_surv_processing(self):
         self.__save_processed_data()
         self.__reset_db_processing()
         return    
@@ -634,7 +691,7 @@ class SUSurv(Repository):
         if self.__open:
             self._download_opendatasus(self.inproc_)
         else:
-            raise ValueError('Data set processing is not open. Please, call SUSurv.open_db_processing(db_ref)')
+            raise ValueError('Data set processing is not open. Please, call SUSurv.open_surv_processing(db_ref)')
         return
     
     #==================================================
@@ -648,12 +705,34 @@ class SUSurv(Repository):
     def case_selection(self, method='covid_pos'):
         '''
         This function is responsible for filtering the data set transactions.
+        
         Methods:
+            
             - "covid_pos": Selects the transactions that are COVID positive. 
             The selection is a disjunction of the following conditions:
             (CLASSI_FIN=='covid19'):                 final diagnosis of the case
+            (AN_SARS2==True):                        
             (PCR_SARS2==True):                       RT-PCR for SARS-CoV-2 result
-            (POS_AN_OUT=='nao' & POS_AN_FLU=='nao'): results of testing other respiratory disease (OUT) and influenza (FLU)
+            (RES_IGM==True):
+            (RES_IGA==True): 
+            
+            - "hosp": Selects the transactions that were hospitalised.
+            The selection is a disjunction of the following conditions:
+                (HOSPITAL=='sim'):      Hospitalised patient
+                (DT_INTERNA):           Valid date of hospitalisation
+                (UTI=='sim'):           ICU hospitalisation                 
+                (DT_ENTUTI):            Valid date of ICU hospitalisation
+            
+            - "full_clin": Selects the transactions with full clinical 
+            information (no missing values on clinical features)
+            
+            - "full_demo": Selects the transactions with full demographic 
+            information (no missing values on demographic features)
+            
+            - "age_adult": Selects the transactions with adult age
+            (20 < age < 60)
+            
+            - "age_over_20": Selects the transactions with age > 20
         
         Parameters
         ----------
@@ -666,7 +745,7 @@ class SUSurv(Repository):
         (Modifies the private attribute of the dataframe under processing)
 
         '''
-        if method is self.__log_proc[self.__db_ref_inproc]['case_selection']:
+        if method in self.__log_proc[self.__db_ref_inproc]['case_selection']:
             print('Case selection is updated')
             return
         
@@ -677,6 +756,12 @@ class SUSurv(Repository):
         
         if method == 'covid_pos':
             df = self.__covid_positive_cases(df)
+        if method == 'hosp':
+            df = self.__hospitalised_cases(df)
+        if method == 'full_clin':
+            df = self.__full_clin_cases(df)
+        if method == 'full_demo':
+            df = self.__full_demo_cases(df)
         # add here future input args selection
         
         self.__update_df_inproc(df, 'case_selection_{}'.format(method))
@@ -806,7 +891,7 @@ class SUSurv(Repository):
             df['sintoma_gripal'] = (df['congestao_nasal']==True) | (df['coriza']==True) | (df['espirro']==True) | (df['cefaleia']==True) | (df['dor_de_garganta']==True) | (df['dores_corpo']==True) | (df['adinamia']==True) | (df['mal_estar']==True) | (df['dor_olhos']==True)
             df['nausea_vomito'] = (df['nausea']==True) | (df['vomito']==True)
         
-        self.__generated_clin_feat = [feat.upeer() for feat in df.columns if feat.islower()]
+        self.__generated_clin_feat = [feat.upper() for feat in df.columns if feat.islower()]
         upper_cases = {col: col.upper() for col in df.columns}
         df.rename(columns=upper_cases, inplace=True)
         
@@ -814,7 +899,9 @@ class SUSurv(Repository):
         return 
     
     def add_ibge_feats(self):
-        ## !!! NOT IMPLEMENTED
+        '''
+        !!! NOT IMPLEMENTED
+        '''
         
         if self.__log_proc[self.__db_ref_inproc]['add_ibge_feats']:
             print('IBGE features generation is updated')
@@ -828,7 +915,7 @@ class SUSurv(Repository):
         # self.__update_df_inproc(df) # update with udpdated dataframe containing IBGE features
         return
     
-    def save_full_process(self, concat=False, save_srag=True): # true or false?
+    def save_surv_process(self, concat=False, save_srag=True): # true or false?
         '''
         This function saves all processed data open in SUSurv object.
         
@@ -851,7 +938,7 @@ class SUSurv(Repository):
 
         '''
         if self.__open:
-            self.close_db_processing()
+            self.close_surv_processing()
         
         # ADJUST FOR self.__dfs_proc = {db_ref : pandas.dataframe    
         print('\n>> started SUSurv saving process\n.')
@@ -920,7 +1007,7 @@ class SUSurv(Repository):
         
         print('\n>> started {} data processing pipeline\n.'.format(db_ref))
         
-        self.open_db_processing(db_ref)
+        self.open_surv_processing(db_ref)
         
         # CASE SELECTION
         self.case_selection()
@@ -930,6 +1017,6 @@ class SUSurv(Repository):
         if ibge_data:
             self.add_ibge_feats()
             
-        self.close_db_processing()
+        self.close_surv_processing()
         
         return
