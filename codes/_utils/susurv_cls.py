@@ -78,16 +78,7 @@ class SUSurv(Repository):
         ## logs
         self.__generated_clin_feat = []
         self.__other_demo_feat = []
-        self.__log_proc = {} 
-        self.__log_proc_db = {'event_': None,
-                              'input_cens_': None,
-                              'db_datestamp_': None,
-                              'case_selection': [],
-                              'feat_selection': False,
-                              'generate_clinical_feat': False,
-                              'add_ibge_feats': False,
-                              'case_tree': {}
-                             }
+        self.__log_proc = {}
         self.__log_gen = {'datastamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                           'code-path': str(os.path.dirname(__file__)).replace('\\','/') + '/' + str(os.path.basename(__file__)),
                           'save_concat': None,
@@ -116,14 +107,21 @@ class SUSurv(Repository):
         return list(self.__dfs_proc.keys())
     
     def __set_log_db_processing(self, db_ref, event, input_cens):
-        self.__log_proc[db_ref] = self.__log_proc_db.copy()
-        self.__log_proc[db_ref]['event_'] = event
-        self.__log_proc[db_ref]['input_cens_'] = input_cens
+        self.__log_proc[db_ref] = {
+            'event_': event,
+            'input_cens_': input_cens,
+            'db_datestamp_': None,
+            'case_selection': False,
+            'feat_selection': False,
+            'generate_clinical_feat': False,
+            'add_ibge_feats': False,
+            'case_tree': {}
+            }
         return
     
     def __save_processed_data(self):
-        self.__dfs_proc[self.__db_ref_inproc] = self.__df_inproc.copy()
-        print('> closed {} processing'.format(self.__db_ref_inproc))
+        self.__dfs_proc[self.inproc_] = self.__df_inproc.copy()
+        print('> closed {} processing'.format(self.inproc_))
         return
     
     def __set_concat(self):
@@ -132,7 +130,6 @@ class SUSurv(Repository):
 
     def __open_db_processing(self, db_ref, event, input_cens, case_selection):
         # loads the parameters of open_surv_processing plus the processing DataFrame and __open flag
-        self.__open = True
         self.__set_log_db_processing(db_ref, event, input_cens)
         self.__db_ref_inproc = db_ref
         self.__surv_event_def = event
@@ -142,7 +139,8 @@ class SUSurv(Repository):
         # load < self.__df_inproc > for the first time
         if not self._has_db(db_ref):
             self.download_opendatasus(db_ref)
-        self.__update_df_inproc(self.get_original_data(db_ref), 'original_srag')
+        self.__update_df_inproc(self.__load_db(db_ref, load_log=True), 'original_srag')
+        self.__open = True
         
         if case_selection:
             self.case_selection()
@@ -150,7 +148,7 @@ class SUSurv(Repository):
         self.__update_df_inproc(self.__date_process(self.inproc_data_), 'date_process')
         # generates survival data
         self.__set_survival_data()
-        print('{} processing opened.')
+        print('{} new processing opened.'.format(self.inproc_))
         return
         
     def __reset_db_processing(self):
@@ -170,7 +168,17 @@ class SUSurv(Repository):
         self.__db_datestamp = self.__log_proc[db_ref]['db_datestamp_']
         self.__df_inproc = self.__dfs_proc[db_ref].copy()
         self.__open = True
-        print('{} processing restored.')
+        print('Reopened {} data set processing.'.format(db_ref))
+        self.__status_db(db_ref)
+        
+    def __status_db(self, db_ref):
+        print('- event: {}'.format(self.__log_proc[db_ref]['event_']))
+        print('- input right-censoring: {}'.format(self.__log_proc[db_ref]['input_cens_']))
+        print('- data set datestamp: {}'.format(self.__log_proc[db_ref]['db_datestamp_']))
+        print('- case selection: {}'.format(self.__log_proc[db_ref]['case_selection']))
+        print('- feature selection: {}'.format(self.__log_proc[db_ref]['feat_selection']))
+        print('- text-generated clinical features: {}'.format(self.__log_proc[db_ref]['generate_clinical_feat']))
+        print('- ibge data: {}'.format(self.__log_proc[db_ref]['add_ibge_feats']))
     
     
     #==================================================
@@ -362,7 +370,7 @@ class SUSurv(Repository):
         with open(self._file_dt_feat, 'r') as f: 
             feats += json.load(f)
         # clinical features
-        if self.__log_proc[self.__db_ref_inproc]['generate_clinical_feat']:
+        if self.__log_proc[self.inproc_]['generate_clinical_feat']:
             feats += self.__generated_clin_feat
         else:
             with open(self._file_clin_feat, 'r') as f: 
@@ -370,7 +378,7 @@ class SUSurv(Repository):
         return feats
     
     def __clin_feats(self):
-        if self.__log_proc[self.__db_ref_inproc]['generate_clinical_feat']:
+        if self.__log_proc[self.inproc_]['generate_clinical_feat']:
             return self.__generated_clin_feat
         else:
             with open(self._file_clin_feat, 'r') as f: 
@@ -439,7 +447,7 @@ class SUSurv(Repository):
     #   a modified dataframe
     #==================================================
         
-    def __load_db(self, db_ref):
+    def __load_db(self, db_ref, load_log=False):
         '''
         This function loads the SRAG .csv file and format the features 
         using external json file comprising a feature dictionary of types.
@@ -484,8 +492,9 @@ class SUSurv(Repository):
         df.fillna(value=np.nan, inplace=True)
         df.insert(0,'id_DB', [self._get_name(db_ref)]*df.shape[0])
         
-        self.__db_datestamp = self._get_db_datestamp(db_ref)
-        self.__log_proc[self.__db_ref_inproc]['db_datestamp_'] = self.__db_datestamp
+        if load_log:
+            self.__db_datestamp = self._get_db_datestamp(db_ref)
+            self.__log_proc[db_ref]['db_datestamp_'] = self.__db_datestamp
         return df
 
     def __date_process(self, df):
@@ -542,7 +551,7 @@ class SUSurv(Repository):
     
     def __update_df_inproc(self, df, _id):
        self.__df_inproc = df.copy()
-       self.__log_proc[self.inproc_]['case_tree'][_id] = df.shape[0]
+       self.__log_proc[self.__db_ref_inproc]['case_tree'][_id] = df.shape[0]
        return
     
     
@@ -620,14 +629,8 @@ class SUSurv(Repository):
         print('proc saving original srag: {}'.format(self.__log_gen['save_orig']))
         print('\n>> Processing Configs:')
         for db in self.__log_proc.keys():
-            print('\n- Data set: {}'.format(db))
-            print('event: {}'.format(self.__log_proc[db]['event_']))
-            print('input right-censoring: {}'.format(self.__log_proc[db]['input_cens_']))
-            print('data set datestamp: {}'.format(self.__log_proc[db]['db_datestamp_']))
-            print('case selection: {}'.format(self.__log_proc[db]['case_selection']))
-            print('feature selection: {}'.format(self.__log_proc[db]['feat_selection']))
-            print('text-generated clinical features: {}'.format(self.__log_proc[db]['generate_clinical_feat']))
-            print('ibge data: {}'.format(self.__log_proc[db]['add_ibge_feats']))
+            print('\nData set: {}'.format(db))
+            self.__status_db(db)
         return
     
     def case_selection_tree(self):
@@ -659,7 +662,8 @@ class SUSurv(Repository):
             [srag20, srag21]
             The identification of the data set to instantiate a new processing.
         event : str, The default is 'death'.
-            DESCRIPTION. 
+            ['icu', 'icu_death', 'death']
+            Survival event to consider in the survival study.
         input_cens : bool, The default is True.
             Whether to input right-censoring. 
         case_selection: bool, The default is True.
@@ -687,7 +691,7 @@ class SUSurv(Repository):
     def reset_surv_processing(self, case_selection=True):
         if not self.__open:
             raise ValueError('Reopen a data set processing before resetting. On-going processes: {}'.format(self.__log_proc.keys()))
-        self.__open_db_processing(self.__db_ref_inproc, self.event_, self.__input_cens, case_selection)
+        self.__open_db_processing(self.inproc_, self.event_, self.__input_cens, case_selection)
     
     def close_surv_processing(self):
         self.__save_processed_data()
@@ -757,6 +761,7 @@ class SUSurv(Repository):
             - "full_demo": Selects the transactions with full demographic 
             information (no missing values on demographic features)
             
+            [NOT IMPLEMENTED]
             - "age_adult": Selects the transactions with adult age
             (20 < age < 60)
             
@@ -773,11 +778,13 @@ class SUSurv(Repository):
         (Modifies the private attribute of the dataframe under processing)
 
         '''
-        if method in self.__log_proc[self.__db_ref_inproc]['case_selection']:
+        if not self.__log_proc[self.inproc_]['case_selection']:
+            self.__log_proc[self.inproc_]['case_selection'] = []
+        if method in self.__log_proc[self.inproc_]['case_selection']:
             print('Case selection is updated')
             return
         
-        self.__log_proc[self.__db_ref_inproc]['case_selection'].append(method) 
+        self.__log_proc[self.inproc_]['case_selection'].append(method) 
         print('.. case selection: {}'.format(method))
         
         df = self.inproc_data_
@@ -838,11 +845,11 @@ class SUSurv(Repository):
         '''
         
         def __remove_feat_id(id_):
-            if id_ in self.__log_proc[self.__db_ref_inproc]['feat_selection']:
-                self.__log_proc[self.__db_ref_inproc]['feat_selection'].remove(id_)
+            if id_ in self.__log_proc[self.inproc_]['feat_selection']:
+                self.__log_proc[self.inproc_]['feat_selection'].remove(id_)
         
         def __get_feats(id_):
-            if id_ in self.__log_proc[self.__db_ref_inproc]['feat_selection']:
+            if id_ in self.__log_proc[self.inproc_]['feat_selection']:
                 if id_=='demo_feat':
                     return self.__demo_feats()
                 elif id_=='lab_feat':
@@ -853,9 +860,9 @@ class SUSurv(Repository):
                 raise ValueError('{} were already removed from selection. Please, reset_surv_processing() to reload removed features.'.format(id_))
             
         
-        # first feat_selection execution >> self.__log_proc[self.__db_ref_inproc]['feat_selection'] is initialised False
-        if not self.__log_proc[self.__db_ref_inproc]['feat_selection']: 
-            self.__log_proc[self.__db_ref_inproc]['feat_selection'] = ['gen_feat', 'dt_feat', 'clin_feat', 'demo_feat', 'lab_feat']
+        # first feat_selection execution >> self.__log_proc[self.inproc_]['feat_selection'] is initialised False
+        if not self.__log_proc[self.inproc_]['feat_selection']: 
+            self.__log_proc[self.inproc_]['feat_selection'] = ['gen_feat', 'dt_feat', 'clin_feat', 'demo_feat', 'lab_feat']
             
         print('.. feature selection: demo_feat={}, lab_feat={}, generate_clin_feat={}'.format(demo_feat, lab_feat, generate_clin_feat))
         
@@ -900,10 +907,10 @@ class SUSurv(Repository):
 
         '''
         
-        if self.__log_proc[self.__db_ref_inproc]['generate_clinical_feat']:
+        if self.__log_proc[self.inproc_]['generate_clinical_feat']:
             print('Clinical features generation is updated')
             return
-        print('.. clinical features generation from text processing ()')
+        print('.. clinical features generation from text processing < OUTRO_DES','MORB_DESC > SRAG features.')
         
         # existent clinical features >> adjustments
         with open(self._file_clin_feat, 'r') as f: 
@@ -936,10 +943,7 @@ class SUSurv(Repository):
         # add original features for which no regex was implemented
         df['doenca_hematologica'] = df['HEMATOLOGI']
         df['sindrome_down'] = df['SIND_DOWN']
-        df.drop(columns=clin_feat, inplace=True)
-        
-        # set clinical features to boolean dtype
-        df = df.astype(dict.fromkeys([feat for feat in df.columns if feat.islower()],'boolean'))   
+        df.drop(columns=clin_feat, inplace=True) # drop columns of original srag clinical features
         
         # generate combined clinical features
         if combine:
@@ -947,15 +951,24 @@ class SUSurv(Repository):
             df['alteracao_respiratoria'] = (df['disturbios_respiratorios']==True) | (df['cianose']==True) | (df['saturacao_menor_95']==True)
             df['sintoma_gripal'] = (df['congestao_nasal']==True) | (df['coriza']==True) | (df['espirro']==True) | (df['cefaleia']==True) | (df['dor_de_garganta']==True) | (df['dores_corpo']==True) | (df['adinamia']==True) | (df['mal_estar']==True) | (df['dor_olhos']==True)
             df['nausea_vomito'] = (df['nausea']==True) | (df['vomito']==True)
+        #new_clin_feat += ['alteracao_olfato_paladar', 'alteracao_respiratoria', 'sintoma_gripal', 'nausea_vomito']
         
-        # save names of generated clinical features
-        self.__generated_clin_feat = [feat.upper() for feat in df.columns if feat.islower()]
-        # adjust feat names to upper case
-        upper_cases = {col: col.upper() for col in df.columns}
+        # new clinical features
+        new_clin_feat = [feat for feat in df.columns if feat.islower()]
+        if self.survival_status_feat_ in new_clin_feat: new_clin_feat.remove(self.survival_status_feat_)
+        if self.survival_time_feat_ in new_clin_feat:  new_clin_feat.remove(self.survival_time_feat_)
+        
+        # set clinical features to boolean dtype
+        df = df.astype(dict.fromkeys(new_clin_feat,'boolean'))   
+        # adjust names to upper case
+        upper_cases = {col: col.upper() for col in new_clin_feat}
         df.rename(columns=upper_cases, inplace=True)
         
+        # save names of generated clinical features
+        self.__generated_clin_feat = [feat.upper() for feat in new_clin_feat]
+        
         self.__update_df_inproc(df, 'generate_clin_feat')
-        self.__log_proc[self.__db_ref_inproc]['generate_clinical_feat'] = {'combine': combine}
+        self.__log_proc[self.inproc_]['generate_clinical_feat'] = {'combine': combine}
         return 
     
     def add_ibge_feats(self):
@@ -963,11 +976,11 @@ class SUSurv(Repository):
         !!! NOT IMPLEMENTED
         '''
         
-        if self.__log_proc[self.__db_ref_inproc]['add_ibge_feats']:
+        if self.__log_proc[self.inproc_]['add_ibge_feats']:
             print('IBGE features generation is updated')
             return
-        self.__log_proc[self.__db_ref_inproc]['add_ibge_feats'] = True # add future method arguments in dictionary type for **kwargs
-        print('.. IBGE features extraction from data source ({})'.format(self.__log_proc[self.__db_ref_inproc]['add_ibge_feats']))
+        self.__log_proc[self.inproc_]['add_ibge_feats'] = True # add future method arguments in dictionary type for **kwargs
+        print('.. IBGE features extraction from data source ({})'.format(self.__log_proc[self.inproc_]['add_ibge_feats']))
         
         ibge_feats = []
         self.__other_demo_feat += ibge_feats

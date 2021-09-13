@@ -72,6 +72,10 @@ class Repository():
         self._file_feat_regex = self.__procUtils_path + "_srag_featProc_featRegex.json"
         self._file_feat_unification = self.__procUtils_path + "_srag_featProc_featUnification.json"
         
+        # external data bases
+        # add igbe folder path and strategic files
+        # add cnes folder path
+        
         # path config: process_data_{}/
         self.__proc_file_mask = self.__proc_data_path + "{}_SUSurv" + self.__extension
         self.__proc_dtype_mask = self.__proc_data_path + "{}_SUSurv_dtypes.json"
