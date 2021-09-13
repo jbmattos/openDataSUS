@@ -123,7 +123,7 @@ class SUSurv(Repository):
     
     def __save_processed_data(self):
         self.__dfs_proc[self.__db_ref_inproc] = self.__df_inproc.copy()
-        print('> saved processed {}'.format(self.__db_ref_inproc))
+        print('> closed {} processing'.format(self.__db_ref_inproc))
         return
     
     def __set_concat(self):
@@ -150,6 +150,7 @@ class SUSurv(Repository):
         self.__update_df_inproc(self.__date_process(self.inproc_data_), 'date_process')
         # generates survival data
         self.__set_survival_data()
+        print('{} processing opened.')
         return
         
     def __reset_db_processing(self):
@@ -169,6 +170,7 @@ class SUSurv(Repository):
         self.__db_datestamp = self.__log_proc[db_ref]['db_datestamp_']
         self.__df_inproc = self.__dfs_proc[db_ref].copy()
         self.__open = True
+        print('{} processing restored.')
     
     
     #==================================================
@@ -351,7 +353,8 @@ class SUSurv(Repository):
     #==================================================
     
     def __default_feats(self):
-        feats = ["id_DB"]
+        # data set id, survival_time, survival_status, initial date for survival study, date of the event occurrence
+        feats = ["id_DB", self.survival_time_feat_, self.survival_status_feat_, self.__dt_study_feat[0], self.__dt_study_feat[1]] 
         # general info
         with open(self._file_gen_feat, 'r') as f: 
             feats += json.load(f)
@@ -376,9 +379,8 @@ class SUSurv(Repository):
     def __demo_feats(self):
         with open(self._file_demo_feat, 'r') as f: 
             feats = json.load(f)
-        if self.__log_proc[self.__db_ref_inproc]['add_ibge_feats']:
-            feats += self.__other_demo_feat
-        return
+        # self.__other_demo_feat: initialised as [] >> updated with < += somelist > inside the methods that generate demo feat from external sources (ex. ibge) 
+        return feats + self.__other_demo_feat
         
     def __lab_feats(self):
         with open(self._file_lab_feat, 'r') as f: 
@@ -428,7 +430,7 @@ class SUSurv(Repository):
         This function selects the transactions with full information on 
         clinical features
         '''        
-        return df.dropna(axis='index', how='any', subset=self.__demo_feats, inplace=False)
+        return df.dropna(axis='index', how='any', subset=self.__demo_feats(), inplace=False)
     
     #==================================================
     #  DATAFRAME MANIPULATION
@@ -580,6 +582,10 @@ class SUSurv(Repository):
         return self.__demo_feats()
     
     @property
+    def lab_feat_(self):
+        return self.__lab_feats()
+    
+    @property
     def inproc_(self):
         self.__verify_opening()
         return self.__db_ref_inproc
@@ -643,22 +649,25 @@ class SUSurv(Repository):
         self.__verify_opening()
         return self.__df_inproc[self.survival_status_feat_]
     
-    def open_surv_processing(self, db_ref, event='death', input_cens=True, case_selection=True):
+    def open_surv_processing(self, db_ref, event='death', input_cens=True, case_selection=True, reset=False):
         '''
         Open the processing mode for a data set 
             
         Parameters
         ----------
-        db_ref : TYPE
-            DESCRIPTION.
-        event : TYPE, optional
-            DESCRIPTION. The default is 'death'.
-        input_cens : TYPE, optional
-            DESCRIPTION. The default is True.
-        case_selection: bool, optional
-            If True, performs the default case selection. The default is True.
-        feat_selection: bool, optional
-            If True, performs the default features selection. The default is False.
+        db_ref : str
+            [srag20, srag21]
+            The identification of the data set to instantiate a new processing.
+        event : str, The default is 'death'.
+            DESCRIPTION. 
+        input_cens : bool, The default is True.
+            Whether to input right-censoring. 
+        case_selection: bool, The default is True.
+            If True, performs the default case selection. 
+        reset: bool, The default is False.
+            If True, instantiate a entirely new processing for db_ref, even if 
+            an ongoing process is already registered in the SUSurv object.
+            If False, restores the ongoing process.
 
         Returns
         -------
@@ -670,10 +679,15 @@ class SUSurv(Repository):
         if self.__open:
             self.close_surv_processing()
         
-        if db_ref in self.__db_ref_proc:
+        if db_ref in self.__db_ref_proc and not reset:
             self.__reopen_db_processing(db_ref)
         else:
             self.__open_db_processing(db_ref, event, input_cens, case_selection)
+    
+    def reset_surv_processing(self, case_selection=True):
+        if not self.__open:
+            raise ValueError('Reopen a data set processing before resetting. On-going processes: {}'.format(self.__log_proc.keys()))
+        self.__open_db_processing(self.__db_ref_inproc, self.event_, self.__input_cens, case_selection)
     
     def close_surv_processing(self):
         self.__save_processed_data()
@@ -715,6 +729,10 @@ class SUSurv(Repository):
     def case_selection(self, method='covid_pos'):
         '''
         This function is responsible for filtering the data set transactions.
+        ! Attention: the filtering (selection) method removes transactions 
+                from the data set in processing.
+                To restore removed transaction, it is necessary to
+                restart the data set processing with SUSurv.reset_surv_processing()
         
         Methods:
             
@@ -766,40 +784,51 @@ class SUSurv(Repository):
         
         if method == 'covid_pos':
             df = self.__covid_positive_cases(df)
+            self.__update_df_inproc(df, 'case_selection_{}'.format(method))
         if method == 'hosp':
             df = self.__hospitalised_cases(df)
+            self.__update_df_inproc(df, 'case_selection_{}'.format(method))
         if method == 'full_clin':
             df = self.__full_clin_cases(df)
+            self.__update_df_inproc(df, 'case_selection_{}'.format(method))
         if method == 'full_demo':
             df = self.__full_demo_cases(df)
+            self.__update_df_inproc(df, 'case_selection_{}'.format(method))
         # add here future input args selection
         
-        self.__update_df_inproc(df, 'case_selection_{}'.format(method))
         return
     
-    def feat_selection(self, clin_feat_gen=False, demo_feat=False, lab_feat=False):
+    def feat_selection(self, demo_feat=True, lab_feat=True, generate_clin_feat=False):
         '''
-        This function is responsible for feature selection. By default, the data includes 
-        general info, date features and the SRAG original clinical features.
+        This function is responsible for feature selection.
+        ! Attention: this function works by removing the non-selected feature 
+                    groups from the data set in processing.
+                    To restore removed groups of features, it is necessary to
+                    restart the data set processing with SUSurv.reset_surv_processing()
+                    
+        By default, the function selects:
+            - general srag info, 
+            - srag date features 
+            - srag original clinical features
+            - srag demographic features
+            - srag laboratorial features [NOT IMPLEMENTED]
         The selected features are predefined in the external .json files:
-        
-            openDataSUS\data\_srag_featSelection_genFeat.json  (general info feats)
-            openDataSUS\data\_srag_featSelection_dtFeat.json   (date feats)
-            openDataSUS\data\_srag_featSelection_clinFeat.json (clinical feats)
+            openDataSUS/data/_srag_featSelection_genFeat.json  (general info feats)
+            openDataSUS/data/_srag_featSelection_dtFeat.json   (date feats)
+            openDataSUS/data/_srag_featSelection_clinFeat.json (clinical feats)
+            openDataSUS/data/_srag_featSelection_demoFeat.json (demographic feats)
+            openDataSUS/data/_srag_featSelection_labFeat.json  (laboratorial feats)
         
         Parameters
         ----------
-        clin_feat_gen : bool, optional
-            Whether to generate clinical features by processing text features using predefined regex patterns.
-            If True, executes SUSurv.generate_clinical_feat()
-            The default is False.
-        demo_feat : bool, optional
+        demo_feat : bool, The default is True.
             Whether to include demographic features from SRAG data set
-            The default is False.
-        lab_feat : bool, optional (NOT IMPLEMENTED YET)
+        lab_feat : bool, The default is True. (NOT IMPLEMENTED YET)
             Whether to include laboratorial features from SRAG data set
             containing test results for other viral coinfections
-            The default is False.
+        generate_clin_feat : bool, The default is False.
+            Whether to generate clinical features by processing text features using predefined regex patterns.
+            If True, executes SUSurv.generate_clinical_feat().             
             
         Returns
         -------
@@ -808,25 +837,47 @@ class SUSurv(Repository):
 
         '''
         
-        if self.__log_proc[self.__db_ref_inproc]['feat_selection']:
-            print('Feature selection is updated')
-            return
-        self.__log_proc[self.__db_ref_inproc]['feat_selection'] = {'clin_feat_gen': clin_feat_gen, 
-                                                                   'demo_feat': demo_feat, 
-                                                                   'lab_feat': lab_feat}
-        print('.. feature selection: {}'.format(self.__log_proc[self.__db_ref_inproc]['feat_selection']))
+        def __remove_feat_id(id_):
+            if id_ in self.__log_proc[self.__db_ref_inproc]['feat_selection']:
+                self.__log_proc[self.__db_ref_inproc]['feat_selection'].remove(id_)
+        
+        def __get_feats(id_):
+            if id_ in self.__log_proc[self.__db_ref_inproc]['feat_selection']:
+                if id_=='demo_feat':
+                    return self.__demo_feats()
+                elif id_=='lab_feat':
+                    return self.__lab_feats()
+                else:
+                    raise ValueError('{} feature identification not defined.'.format(id_))
+            else: # requiring feat-id_=True that were aldeady removed from data
+                raise ValueError('{} were already removed from selection. Please, reset_surv_processing() to reload removed features.'.format(id_))
+            
+        
+        # first feat_selection execution >> self.__log_proc[self.__db_ref_inproc]['feat_selection'] is initialised False
+        if not self.__log_proc[self.__db_ref_inproc]['feat_selection']: 
+            self.__log_proc[self.__db_ref_inproc]['feat_selection'] = ['gen_feat', 'dt_feat', 'clin_feat', 'demo_feat', 'lab_feat']
+            
+        print('.. feature selection: demo_feat={}, lab_feat={}, generate_clin_feat={}'.format(demo_feat, lab_feat, generate_clin_feat))
         
         # default info
         feats = self.__default_feats()
-        if demo_feat: feats += self.__demo_feats()
-        if lab_feat: feats += self.__lab_feats()      
+        
+        if demo_feat:
+            feats += __get_feats('demo_feat')
+        else: # demo_feat=False >> remove feats from selection
+            __remove_feat_id('demo_feat')
+            
+        if lab_feat:
+            feats += __get_feats('lab_feat')
+        else: # lab_feat=False >> remove feats from selection
+            __remove_feat_id('lab_feat')
         
         df = self.inproc_data_
         df = df[feats]
         self.__update_df_inproc(df, 'feat_selection')
         
         # generate new clinical features from text search and feature unification
-        if clin_feat_gen:
+        if generate_clin_feat:
             self.generate_clinical_feat()
         return
     
@@ -839,11 +890,8 @@ class SUSurv(Repository):
         
         Parameters
         ----------
-        df : pd.DataFrame
-            Dataframe containing the original clinical features to be processed into new ones.
-        combine : bool, optional
+        combine : bool, The default is True.
             Wheter to combine some (pre-defined) strategic clinical features into single one. 
-            The default is True.
 
         Returns
         -------
@@ -855,8 +903,7 @@ class SUSurv(Repository):
         if self.__log_proc[self.__db_ref_inproc]['generate_clinical_feat']:
             print('Clinical features generation is updated')
             return
-        self.__log_proc[self.__db_ref_inproc]['generate_clinical_feat'] = {'combine': combine}
-        print('.. clinical features generation from text processing ({})'.format(self.__log_proc[self.__db_ref_inproc]['generate_clinical_feat']))
+        print('.. clinical features generation from text processing ()')
         
         # existent clinical features >> adjustments
         with open(self._file_clin_feat, 'r') as f: 
@@ -878,14 +925,14 @@ class SUSurv(Repository):
         text_feat = ['OUTRO_DES','MORB_DESC']
         textSearch = df[text_feat].fillna('').agg(' '.join, axis=1).replace(r'^\s*$', np.nan, regex=True)
         textSearch = textSearch.str.lower()
-        df.drop(columns=text_feat, inplace=True)
+        #df.drop(columns=text_feat, inplace=True)
         
         # add newly generated feats from regex search
         for feature in feat_regex.keys(): 
             df[feature] = textSearch.str.contains(feat_regex[feature], case=False, regex=True)
         # unifying generated features with existent srag features
         for feat_srag, feat in feat_unif:
-            df[feat] = df[[feat,feat_srag]].fillna('').astype(str).agg(''.join, axis=1).replace(r'^\s*$', np.nan, regex=True).str.contains('True', case=False)
+            df[feat] = df[[feat,feat_srag]].astype(str).fillna('').agg(''.join, axis=1).replace(r'^\s*$', np.nan, regex=True).str.contains('True', case=False)
         # add original features for which no regex was implemented
         df['doenca_hematologica'] = df['HEMATOLOGI']
         df['sindrome_down'] = df['SIND_DOWN']
@@ -901,11 +948,14 @@ class SUSurv(Repository):
             df['sintoma_gripal'] = (df['congestao_nasal']==True) | (df['coriza']==True) | (df['espirro']==True) | (df['cefaleia']==True) | (df['dor_de_garganta']==True) | (df['dores_corpo']==True) | (df['adinamia']==True) | (df['mal_estar']==True) | (df['dor_olhos']==True)
             df['nausea_vomito'] = (df['nausea']==True) | (df['vomito']==True)
         
+        # save names of generated clinical features
         self.__generated_clin_feat = [feat.upper() for feat in df.columns if feat.islower()]
+        # adjust feat names to upper case
         upper_cases = {col: col.upper() for col in df.columns}
         df.rename(columns=upper_cases, inplace=True)
         
         self.__update_df_inproc(df, 'generate_clin_feat')
+        self.__log_proc[self.__db_ref_inproc]['generate_clinical_feat'] = {'combine': combine}
         return 
     
     def add_ibge_feats(self):
@@ -981,7 +1031,7 @@ class SUSurv(Repository):
     #
     #==================================================
     
-    def data_processing(self, db_ref, clin_feat_gen=True, demo_feat=True, lab_feat=False, ibge_data=False):
+    def data_processing(self, db_ref, generate_clin_feat=True, demo_feat=True, lab_feat=False, ibge_data=False):
         '''
         Data processing proceadure
 
@@ -990,7 +1040,7 @@ class SUSurv(Repository):
         db_ref : string
             ['srag20', 'srag21']
             Reference to the data set to be processed.
-        clin_feat_gen : bool, optional
+        generate_clin_feat : bool, optional
             Whether to generate clinical features by processing text features using predefined regex patterns.
             If True, executes SUSurv.generate_clinical_feat()
             The default is True.
@@ -1023,7 +1073,7 @@ class SUSurv(Repository):
         self.case_selection()
         
         # FEAT SELECTION
-        self.feat_selection(clin_feat_gen=clin_feat_gen, demo_feat=demo_feat, lab_feat=lab_feat)
+        self.feat_selection(generate_clin_feat=generate_clin_feat, demo_feat=demo_feat, lab_feat=lab_feat)
         if ibge_data:
             self.add_ibge_feats()
             
