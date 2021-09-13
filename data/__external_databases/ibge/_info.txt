@@ -1,0 +1,32 @@
+The data sets in this folder were manually retrieved from the following data sources:
+
+>> ESTIMATIVAS DA POPULAÇÃO [IBGE: Estatísticas > Sociais > População > Estimativas da População]
+- source:
+https://www.ibge.gov.br/estatisticas/sociais/populacao/9103-estimativas-de-populacao.html?=&t=downloads
+- files:
+Estimativas_2020 >> estimativa_dou_2020.xls
+Estimativas_2021 >> estimativa_dou_2021.xls
+
+>> PROJEÇÕES DA POPULAÇÃO [IBGE: Estatísticas > Sociais > População > Projeções da População]
+- source:
+https://www.ibge.gov.br/estatisticas/sociais/populacao/9109-projecao-da-populacao.html?edicao=9116&t=resultados
+Obs:
+Edições 2013 > Tabelas > Projeções da População por sexo e idade - Brasil: 2000-2060 e Unidades da Federação - 2000-2030 > Projeções da população por sexo e idades (xls)
+- file:
+PROJECOES_2013_POPULACAO.xls
+
+>> PNAD [IBGE: Estatísticas > Sociais > População > Pesquisa Nacional por Amostra de Domicílios]
+- source:
+https://www.ibge.gov.br/estatisticas/sociais/populacao/9127-pesquisa-nacional-por-amostra-de-domicilios.html?=&t=downloads
+Obs:
+Microdados > 2015 
+- file:
+Indicadores_harmonizados_PNAD_1992_2015_Trabalho_e_Rendimento_15_anos_ou_mais.xls
+
+>> SÍNTESE DE INDICADORES SOCIAIS [IBGE: Estatísticas > Sociais > População > Síntese de Indicadores Sociais]
+- source: 
+https://www.ibge.gov.br/estatisticas/sociais/populacao/9221-sintese-de-indicadores-sociais.html?=&t=downloads
+Obs:
+Indicadores_Sociais_de_Moradia_no_Contexto_da_PrePandemia_de_COVID19_2019
+- file:
+Indicadores_moradia_saneamento_2019_20210624.xlsx

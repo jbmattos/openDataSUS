@@ -45,7 +45,8 @@ class Repository():
         self.__data_path = self.__root_path + "data/"
         self.__code_path = self.__root_path + "code/"
         self.__proc_data_path = self.__root_path + "process_data_{}/".format(self.__datestamp)
-        # path config: data
+        
+        # path config: /data/
         self.__extension = '.csv'
         self.__db_file_mask = self.__data_path + "{}" + self.__extension             
         self.__db_tempfile_mask = self.__data_path + "temp_{}" + self.__extension
@@ -54,14 +55,15 @@ class Repository():
         self.__log_download = {}
         self.__use_temp = False
         self.__compress = None
-        # paths: data/ __data_dictionary >> generation of dictionary of types
+        ## data/subfolders
+        ## data/__data_dictionary >> generation of dictionary of types
         self.__dataDic_path = self.__root_path + "data/__data_dictionary/"
         self.__logfile_dictionaries = self.__dataDic_path + '_log.txt'
         self.__baseDic_file = self.__dataDic_path + "_srag_orig_dicionario.json"
         self.__procDic_remove = self.__dataDic_path + "srag_2remove_orig.json"
         self.__procDic_add20 = self.__dataDic_path + "srag_2add_2020.json"
         self.__procDic_add21 = self.__dataDic_path + "srag_2add_2021.json"
-        # paths: data/ __proc_utils >> processing the openDataSUS files
+        ## data/__proc_utils >> processing the openDataSUS files
         self.__procUtils_path = self.__root_path + "data/__proc_utils/"
         self._file_gen_feat = self.__procUtils_path + "_srag_featSelection_genFeat.json"
         self._file_clin_feat = self.__procUtils_path + "_srag_featSelection_clinFeat.json"
@@ -71,12 +73,12 @@ class Repository():
         self._file_feat_clin2bool = self.__procUtils_path + "_srag_featProc_clinFeat2bool.json"
         self._file_feat_regex = self.__procUtils_path + "_srag_featProc_featRegex.json"
         self._file_feat_unification = self.__procUtils_path + "_srag_featProc_featUnification.json"
+        ## data/__external_databases
+        ### internal files to the subfolders are defined directly on the <external_database> implemented class 
+        self._extDB_ibge_path = self.__root_path + "data/__external_databases/ibge/"
+        #self._extDB_cnes_path = self.__root_path + "data/__external_databases/cnes/"
         
-        # external data bases
-        # add igbe folder path and strategic files
-        # add cnes folder path
-        
-        # path config: process_data_{}/
+        # path config: /process_data_{}/
         self.__proc_file_mask = self.__proc_data_path + "{}_SUSurv" + self.__extension
         self.__proc_dtype_mask = self.__proc_data_path + "{}_SUSurv_dtypes.json"
         self.__logfile_proc = self.__proc_data_path + "_log.json"
