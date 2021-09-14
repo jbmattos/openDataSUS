@@ -1,0 +1,5 @@
+The data sets in this folder were manually retrieved from the following data sources:
+
+Atlas Brasil
+http://www.atlasbrasil.org.br/acervo/biblioteca
+> base de dados > Censo Demográfico (1991, 2000 e 2010)

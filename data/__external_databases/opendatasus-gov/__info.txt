@@ -1,0 +1,15 @@
+The data sets in this folder were manually retrieved from the following data sources:
+
+
+>>> DISTRIBUIÇÃO DE MEDICAMENTOS – COVID-19 (distribuicao_medicamentos-covid19.csv)
+- source: https://opendatasus.saude.gov.br/dataset/distribuicao-de-medicamentos-covid-19
+- file source: https://opendatasus.saude.gov.br/dataset/distribuicao-de-medicamentos-covid-19/resource/659380b5-ab29-4b4a-89c9-801980b954c1
+- file url: https://sage.saude.gov.br/dados/repositorio/DistribuicaoCloroquinaOseltamivir.csv
+access: 2021-09-14
+____________________________________________________________________________________
+
+>>> Registro de Ocupação Hospitalar COVID-19 (registro_ocupacao_hospitalar.csv)
+- source: https://opendatasus.saude.gov.br/dataset/registro-de-ocupacao-hospitalar
+- file source: https://opendatasus.saude.gov.br/dataset/registro-de-ocupacao-hospitalar/resource/f9391f7c-9775-4fac-a3ce-bf384e2674c2
+- file url: https://s3-sa-east-1.amazonaws.com/ckan.saude.gov.br/Leitos/2021-09-12/esus-vepi.LeitoOcupacao.csv
+access: 2021-09-14

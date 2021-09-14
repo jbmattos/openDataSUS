@@ -1,0 +1,74 @@
+The data sets in this folder were manually retrieved from the following data sources:
+
+
+>>> ESTIMATIVAS DA POPULAÇÃO 
+- folder: estimativa-populacao/
+
+- source: [IBGE: Estatísticas > Sociais > População > Estimativas da População]
+https://www.ibge.gov.br/estatisticas/sociais/populacao/9103-estimativas-de-populacao.html?=&t=downloads
+
+- files:
+Estimativas_2020 >> estimativa_dou_2020.xls
+Estimativas_2021 >> estimativa_dou_2021.xls
+____________________________________________________________________________________
+
+>>> PROJEÇÕES DA POPULAÇÃO 
+- folder: projecao-populacao/
+
+- source: [IBGE: Estatísticas > Sociais > População > Projeções da População]
+https://www.ibge.gov.br/estatisticas/sociais/populacao/9109-projecao-da-populacao.html?edicao=9116&t=resultados
+Obs:
+Edições 2013 > Tabelas > Projeções da População por sexo e idade - Brasil: 2000-2060 e Unidades da Federação - 2000-2030 > Projeções da população por sexo e idades (xls)
+
+- file:
+PROJECOES_2013_POPULACAO.xls
+________________________________________________________________________________________
+
+>> SÍNTESE DE INDICADORES SOCIAIS (DE RENDIMENTO E EDUCAÇÃO)2020
+- folder: sintese-indicadres-sociais_rendimento_2020/
+
+- source: [IBGE: Estatísticas > Sociais > População > Síntese de Indicadores Sociais]
+https://www.ibge.gov.br/estatisticas/sociais/populacao/9221-sintese-de-indicadores-sociais.html?=&t=downloads
+Obs: 
+Edições > 2020 > Tabelas > Rendimento
+Edições > 2020 > Tabelas > Educação
+
+- files:
+*.xls: 66 files named "Tabela {Ref}"
+__indice_das_tabelas_sis2020.pdf (define all {Ref})
+
+___________________________________________________________________________________________
+
+>>> PESQUISA NACIONAL DE SAÚDE
+- folder: pesquisa-nacional-saude-2019/
+
+- source: [IBGE: Estatísticas > Sociais > Saúde > Pesquisa Nacional de Saúde]
+https://www.ibge.gov.br/estatisticas/sociais/saude/9160-pesquisa-nacional-de-saude.html?edicao=29270&t=resultados
+Obs: 
+2019 > 2019 Percepção do estado de saúde, estilos de vida, doenças crônicas e saúde bucal > Tabelas
+
+- files:	
+Modulo_N, Modulo_P, Modulo_Q, Modulo_U (.zip files containing xls tables)
+__Sumario_PNS_2019_Volume_4.pdf: contains the dictionary of modules
+___________________________________________________________________________________________
+
+>>> MUNICIPAL DATA
+folder: municipal_data/
+
+desc: collected data for municipalities
+
+>> PIB MUNICIPAL [IBGE: Estatísticas > Econômicas > Contas nacionais > Produto Interno Bruto dos Municípios]
+- source: https://www.ibge.gov.br/estatisticas/economicas/contas-nacionais/9088-produto-interno-bruto-dos-municipios.html?=&t=resultados
+OBS: Edições > 2018 > Base 2010-2018
+- file: PIB-dos-Municipios_base-de-dados-2010-2018.xls (contain data dictionary)
+
+
+
+___________________________________________________________________________________________
+
+>> UF GENERAL INFO
+
+- source:
+https://www.ibge.gov.br/cidades-e-estados.html?view=municipio
+Obs: 
+Exported by UF in 2021-09-14 
