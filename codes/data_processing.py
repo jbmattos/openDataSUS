@@ -5,6 +5,8 @@ Created on Fri Sep 10 10:12:35 2021
 @author: jubma
 """
 
+import argparse
+from _utils.susurv_cls import SUSurv
 
 ########################################################################
 ########################################################################
@@ -13,7 +15,7 @@ Created on Fri Sep 10 10:12:35 2021
 ########################################################################
 
 
-def processing_pipeline(dbs, download, **kwargs):
+def processing_pipeline(dbs, download, event, **kwargs):
     '''
     Pipeline for processing SRAG database into survival data.
     '''
@@ -23,7 +25,9 @@ def processing_pipeline(dbs, download, **kwargs):
     
     for db in dbs:
         if download: surv_proc.download_opendatasus(db)
-        surv_proc.data_processing(db, **kwargs)
+        surv_proc.open_surv_processing(db, event=event)
+        surv_proc.feat_selection(lab_feat=False, generate_clin_feat=True)
+        surv_proc.close_surv_processing()
     
     surv_proc.save(**kwargs)
         
@@ -31,6 +35,10 @@ def processing_pipeline(dbs, download, **kwargs):
 
 
 if __name__ == '__main__':
+    
+    ## THIS SCRIPT WAS NOT TESTED SINCE THE CODE WAS SEPARATED FROM 
+    ## SUSurv() CLASS CODE 
+    ## (AND ADITIONAL FUNCTIONALITY WAS INCORPORATED TO THE CLASS)
 
     # ARG PARSE SETTINGS
     parser = argparse.ArgumentParser(description="Script to automatically retrieve SRAG databases from openDataSUS and process into survival data")

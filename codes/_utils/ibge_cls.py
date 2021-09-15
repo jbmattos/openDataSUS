@@ -27,3 +27,4 @@ class SUSurv(Repository):
         self.__file_pnad = "Indicadores_harmonizados_PNAD_1992_2015_Trabalho_e_Rendimento_15_anos_ou_mais.xls"
         self.__file_ind_prepandemic = "Indicadores_moradia_saneamento_2019_20210624.xlsx"
         
+        
