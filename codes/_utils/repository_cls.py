@@ -75,8 +75,8 @@ class Repository():
         self._file_feat_unification = self.__procUtils_path + "_srag_featProc_featUnification.json"
         ## data/__external_databases
         ### internal files to the subfolders are defined directly on the <external_database> implemented class 
-        self._extDB_ibge_path = self.__root_path + "data/__external_databases/ibge/"
-        #self._extDB_cnes_path = self.__root_path + "data/__external_databases/cnes/"
+        self._extDB_path = self.__root_path + "data/__external_databases/"
+        
         
         # path config: /process_data_{}/
         self.__proc_file_mask = self.__proc_data_path + "{}_SUSurv" + self.__extension
